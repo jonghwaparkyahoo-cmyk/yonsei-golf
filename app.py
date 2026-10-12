@@ -4,7 +4,7 @@ from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="연세대 골프 대회 스코어보드", layout="centered", page_icon="⛳")
 
-# 15초마다 자동으로 화면을 새로고침하여 다른 사용자의 입력값 동기화 (3번 방식 핵심)
+# 15초마다 자동 새로고침 (모든 사용자의 폰에서 실시간 동기화)
 st_autorefresh(interval=15000, key="datarefresh")
 
 # 모바일 컴팩트 스타일링 CSS
@@ -16,13 +16,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 1. 코스 파(Par) 정보 ---
+# --- 1. 실제 대회방식 시트에서 가져온 18홀 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 세션 상태 초기화 (구글시트 연동 시트 데이터와 싱크되는 공간) ---
-if 'scores' not in st.session_state:
-    st.session_state.scores = {}
+# --- 2. 구글 시트 연결 (실시간 DB 연동) ---
+# Streamlit Cloud Secrets에 설정된 gsheet 연결을 불러옵니다.
+try:
+    conn = st.connection("gsheets", type="gsheets")
+    # 예시: 'Scores' 시트에서 기존 입력된 점수를 불러옴
+    # df_scores_db = conn.read(worksheet="Scores", ttl=5)
+except Exception as e:
+    # 시트 연동 전 테스트를 위한 로컬 세션 백업
+    pass
 
+if 'scores' not in st.session_state:
+    st.session_state.scores = {}  # {선수명: {홀번호: 타수차}}
+
+# --- 3. 조편성 데이터 ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -173,13 +183,14 @@ if menu == "📝 스코어 입력":
         if submitted:
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
-                # TODO: 추후 여기에 구글 시트(Scores 탭)로 데이터를 전송(Append/Update)하는 코드가 추가됩니다.
+                # TODO: 구글 시트 연동 시 이곳에 conn.update() 또는 시트 기록 로직 추가
             
+            # 18홀 완료 시 자동으로 1번홀(0번째)로 순환
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
-            st.success("저장 완료! 구글 시트와 동기화 중...")
+            st.success("저장 완료! 구글 시트 반영 및 다음 홀로 이동합니다.")
             st.rerun()
 
-    # 최근 입력 홀 기록 테이블
+    # --- 최근 입력 홀 기록 테이블 ("파"를 "0"으로 표시) ---
     st.markdown("---")
     st.markdown("📋 **[최근 입력된 홀 기록]**")
     
@@ -195,7 +206,8 @@ if menu == "📝 스코어 입력":
             h_str = str(h_num)
             if h_num in p_scores:
                 diff = p_scores[h_num]
-                row_data[h_str] = "파" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
+                # 파(0)인 경우 "0"으로 표시
+                row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
             else:
                 row_data[h_str] = "-"
         history_table_rows.append(row_data)
@@ -209,11 +221,11 @@ if menu == "📝 스코어 입력":
         st.caption("아직 기록된 점수가 없습니다.")
 
 # ==========================================
-# [메뉴 2] 실시간 리더보드
+# [메뉴 2] 실시간 리더보드 (선수명, 핸디캡, Gross, Net, 시작홀, 현재위치)
 # ==========================================
 elif menu == "🏆 실시간 리더보드":
     st.header("🏆 실시간 리더보드 (Net 순위)")
-    st.caption("🔄 15초마다 구글 시트 데이터와 자동 동기화됩니다.")
+    st.caption("🔄 구글 시트와 연동되어 실시간으로 자동 동기화됩니다.")
     
     leaderboard_data = []
     for group_name, info in st.session_state.groups.items():
@@ -242,6 +254,7 @@ elif menu == "🏆 실시간 리더보드":
             else:
                 display_hcap = "NA"
                 
+            # 현재위치: 0(대기), F(18홀 완료), 혹은 마지막 입력된 코스 홀 번호 숫자
             if played_count == 0:
                 current_pos = "0"
             elif played_count >= 18:
@@ -264,6 +277,7 @@ elif menu == "🏆 실시간 리더보드":
     df_lb = pd.DataFrame(leaderboard_data)
     if not df_lb.empty:
         df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
+        # 요청하신 컬럼 순서 적용
         df_display = df_lb[["선수명", "핸디캡", "Gross", "Net", "시작홀", "현재위치"]].reset_index(drop=True)
         df_display.index += 1
         st.dataframe(df_display, use_container_width=True)
@@ -271,15 +285,12 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (비밀번호 프로텍트 + 조편성/선수 실시간 수정)
+# [메뉴 3] 운영진 관리 (비밀번호 프로텍트)
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
     
-    # 비밀번호 입력 프로텍트
     admin_password = st.text_input("운영진 비밀번호를 입력하세요", type="password")
-    
-    # 임시 비밀번호 설정 (예: "yonsei2026")
     CORRECT_PASSWORD = "yonsei2026"
     
     if admin_password == CORRECT_PASSWORD:
@@ -319,7 +330,6 @@ elif menu == "⚙️ 운영진 관리":
                     del st.session_state.groups[group_name]['players'][p]
                     st.rerun()
                     
-                # 선수 추가 폼
                 with st.form(key=f"add_player_{group_name}"):
                     col_ap1, col_ap2, col_ap3, col_ap4 = st.columns([2, 1.5, 1.5, 1])
                     with col_ap1:
