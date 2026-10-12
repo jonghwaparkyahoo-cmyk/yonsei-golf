@@ -3,31 +3,84 @@ import pandas as pd
 
 st.set_page_config(page_title="연세대 골프 대회 스코어보드", layout="centered", page_icon="⛳")
 
-# --- 1. 코스 파(Par) 정보 (총 72 파) ---
-PAR_LIST = [4, 4, 4, 3, 4, 5, 3, 5, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4]
+# --- 1. 실제 대회방식 시트에서 가져온 18홀 파(Par) 정보 ---
+PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 데이터 세션 초기화 (조편성 및 핸디캡, 스코어) ---
+# --- 2. 세션 상태 초기화 (스코어 데이터) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}  # {선수명: {홀번호: 타수차}}
 
-# 조편성 시트 및 핸디캡 구조를 반영한 실전 데이터 구조
-# (실제 조편성 시트가 나오면 이 부분에 시트 연동 코드가 들어가게 됩니다)
+# --- 3. 공유해주신 조편성 시트 기반 실제 선수단 데이터 ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
             "start_hole": 1,
             "players": {
-                "김은혁": {"hcap": 23.0},
-                "이은홍": {"hcap": 25.0},
-                "박주원": {"hcap": "NA"}
+                "노재호": {"hcap": 21.0, "dept": "세라믹"},
+                "곽재영": {"hcap": 22.0, "dept": "전자"},
+                "박주원": {"hcap": 15.0, "dept": "전자"}
+            }
+        },
+        "1B조": {
+            "start_hole": 1,
+            "players": {
+                "이용일": {"hcap": 25.0, "dept": "토목"},
+                "신성원": {"hcap": 14.0, "dept": "전기"},
+                "신현경": {"hcap": 17.0, "dept": "전자"},
+                "이창호": {"hcap": 23.0, "dept": "전기"}
+            }
+        },
+        "2조": {
+            "start_hole": 2,
+            "players": {
+                "마이클 안": {"hcap": 8.0, "dept": "국제학부"},
+                "양진기": {"hcap": "NA", "dept": "전산"},
+                "박종화": {"hcap": 10.0, "dept": "전산"},
+                "김택규": {"hcap": 13.0, "dept": "생화학"}
+            }
+        },
+        "3A조": {
+            "start_hole": 3,
+            "players": {
+                "김은혁": {"hcap": 23.0, "dept": "의학"},
+                "변원석": {"hcap": "NA", "dept": "기계"},
+                "임봉욱": {"hcap": 17.0, "dept": "건축"},
+                "이은홍": {"hcap": 25.0, "dept": "건축"}
+            }
+        },
+        "3B조": {
+            "start_hole": 3,
+            "players": {
+                "남명현": {"hcap": 25.0, "dept": "수학"},
+                "박재효": {"hcap": 34.0, "dept": "경제"},
+                "우규진": {"hcap": 18.0, "dept": "전자"},
+                "이미나": {"hcap": 24.0, "dept": "영문"}
+            }
+        },
+        "4조": {
+            "start_hole": 4,
+            "players": {
+                "임주연": {"hcap": "NA", "dept": "세라믹"},
+                "황경진": {"hcap": "NA", "dept": "금속"},
+                "김윤경": {"hcap": 36.0, "dept": "-"}
             }
         },
         "5A조": {
             "start_hole": 5,
             "players": {
-                "노재호": {"hcap": 21.0},
-                "곽재영": {"hcap": 12.5},
-                "최성식": {"hcap": "NA"}
+                "이동휘": {"hcap": "NA", "dept": "금속"},
+                "양성흠": {"hcap": "NA", "dept": "-"},
+                "신재원": {"hcap": "NA", "dept": "전자"},
+                "송창걸": {"hcap": 14.0, "dept": "기계"}
+            }
+        },
+        "5B조": {
+            "start_hole": 5,
+            "players": {
+                "박준식": {"hcap": 11.0, "dept": "사체"},
+                "정태양": {"hcap": "NA", "dept": "스포츠레저"},
+                "최성식": {"hcap": 13.0, "dept": "생명공학"},
+                "김용민": {"hcap": 5.0, "dept": "전기"}
             }
         }
     }
@@ -54,7 +107,6 @@ if menu == "📝 스코어 입력":
     # 시작 홀부터 순서대로 18홀 순환 시퀀스 생성
     hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
     
-    # 현재 집중해서 입력할 홀의 순번 관리 (0 ~ 17번째 홀)
     hole_idx_key = f"current_hole_idx_{group_name}"
     if hole_idx_key not in st.session_state:
         st.session_state[hole_idx_key] = 0
@@ -63,7 +115,7 @@ if menu == "📝 스코어 입력":
     current_course_hole = hole_sequence[current_idx]
     current_par = PAR_LIST[current_course_hole - 1]
     
-    # 상단 네비게이션: 앞뒤 홀로 이동하는 버튼과 현재 위치 표시
+    # 상단 네비게이션: 앞뒤 홀 이동 버튼
     col_prev, col_info, col_next = st.columns([1, 2, 1])
     with col_prev:
         if st.button("◀ 이전 홀") and current_idx > 0:
@@ -78,18 +130,15 @@ if menu == "📝 스코어 입력":
             
     st.markdown("---")
     
-    # 앞뒤 홀 참고 디스플레이 (이전 홀과 다음 홀 정보 간략 표시)
+    # 앞뒤 홀 참고 디스플레이
     prev_h = hole_sequence[current_idx - 1] if current_idx > 0 else "-"
     next_h = hole_sequence[current_idx + 1] if current_idx < 17 else "-"
     st.caption(f"👀 [참고] 이전 홀(코스 {prev_h}번) ➔ **현재 입력 홀(코스 {current_course_hole}번, Par {current_par})** ➔ 다음 홀(코스 {next_h}번)")
 
-    # 모든 선수들이 한눈에 들어오는 통합 테이블 형태로 점수 입력
     with st.form(key=f"unified_score_form_{group_name}_{current_idx}"):
         st.markdown(f"#### 🏌️‍♂️ {current_idx + 1}번째 홀 (코스 {current_course_hole}번홀, Par {current_par}) 스코어 입력")
         
         form_inputs = {}
-        
-        # 테이블 헤더 느낌의 컬럼 구성
         for player, p_data in players_info.items():
             if player not in st.session_state.scores:
                 st.session_state.scores[player] = {}
@@ -98,13 +147,13 @@ if menu == "📝 스코어 입력":
             
             # 더블파 맥스 제한 (파3: +3, 파4: +4, 파5: +5)
             max_over = current_par
-            options = list(range(-2, max_over + 1))  # -2(이글) ~ 더블파(+Par)
+            options = list(range(-2, max_over + 1))
             if current_val not in options:
                 current_val = 0
                 
             col_p1, col_p2 = st.columns([1, 2])
             with col_p1:
-                st.markdown(f"**{player}** (Hcap: {p_data['hcap']})")
+                st.markdown(f"**{player}**<br><span style='font-size:0.8em; color:gray;'>({p_data['dept']} / Hcap: {p_data['hcap']})</span>", unsafe_allow_html=True)
             with col_p2:
                 score_diff = st.selectbox(
                     f"{player} 성적 선택",
@@ -115,7 +164,7 @@ if menu == "📝 스코어 입력":
                     label_visibility="collapsed"
                 )
                 form_inputs[player] = score_diff
-            st.write("") # 간격 조정
+            st.write("")
             
         submitted = st.form_submit_button("💾 이 홀의 스코어 일괄 저장")
         if submitted:
@@ -130,7 +179,6 @@ elif menu == "🏆 실시간 리더보드":
     st.header("🏆 실시간 리더보드 (Net 순위)")
     
     leaderboard_data = []
-    
     for group_name, info in st.session_state.groups.items():
         start_hole = info["start_hole"]
         hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
@@ -166,23 +214,21 @@ elif menu == "🏆 실시간 리더보드":
             
     df_lb = pd.DataFrame(leaderboard_data)
     if not df_lb.empty:
-        # 핸디캡 있는 선수 우선 정렬 후 Net 점수 낮은 순, NA 선수는 하단 배치
         df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
         df_display = df_lb[["선수명", "Gross", "핸디캡", "Net", "소화홀/현재위치"]].reset_index(drop=True)
-        df_display.index += 1  # 1위부터 순위 표시
+        df_display.index += 1
         st.dataframe(df_display, use_container_width=True)
     else:
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (조편성 및 핸디캡 연동 관리)
+# [메뉴 3] 운영진 관리
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 관리 패널")
-    st.markdown("조편성 시트와 핸디캡 데이터베이스를 기반으로 한 조 및 선수 관리 화면입니다.")
+    st.markdown("조편성 시트 데이터 기반 등록 현황입니다.")
     
     for group_name, info in st.session_state.groups.items():
         with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
-            st.write(f"**편성된 선수 및 핸디캡:**")
             for p, d in info["players"].items():
-                st.text(f"- {p} (핸디캡: {d['hcap']})")
+                st.text(f"- {p} ({d['dept']} / 핸디캡: {d['hcap']})")
