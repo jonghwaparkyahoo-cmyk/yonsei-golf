@@ -10,7 +10,7 @@ PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 if 'scores' not in st.session_state:
     st.session_state.scores = {}  # {선수명: {홀번호: 타수차}}
 
-# --- 3. 공유해주신 조편성 시트 기반 실제 선수단 데이터 ---
+# --- 3. 조편성 데이터 ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -91,10 +91,10 @@ st.markdown("---")
 menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리"])
 
 # ==========================================
-# [메뉴 1] 스코어 입력 (통합 테이블 + 단일 홀 입력 및 앞뒤 홀 디스플레이)
+# [메뉴 1] 스코어 입력 (컴팩트 가로 배치 + 최근 3홀 기록 테이블)
 # ==========================================
 if menu == "📝 스코어 입력":
-    st.header("📝 홀별 통합 스코어 입력")
+    st.header("📝 홀별 스코어 입력")
     
     group_list = list(st.session_state.groups.keys())
     group_name = st.selectbox("조 선택", group_list)
@@ -104,7 +104,6 @@ if menu == "📝 스코어 입력":
     
     st.info(f"📌 **{group_name}** | 시작 홀: **{start_hole}번 홀** (샷건 방식)")
     
-    # 시작 홀부터 순서대로 18홀 순환 시퀀스 생성
     hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
     
     hole_idx_key = f"current_hole_idx_{group_name}"
@@ -129,17 +128,13 @@ if menu == "📝 스코어 입력":
             st.rerun()
             
     st.markdown("---")
-    
-    # 앞뒤 홀 참고 디스플레이
-    prev_h = hole_sequence[current_idx - 1] if current_idx > 0 else "-"
-    next_h = hole_sequence[current_idx + 1] if current_idx < 17 else "-"
-    st.caption(f"👀 [참고] 이전 홀(코스 {prev_h}번) ➔ **현재 입력 홀(코스 {current_course_hole}번, Par {current_par})** ➔ 다음 홀(코스 {next_h}번)")
 
+    # 스코어 입력 Form (컴팩트 가로 배치)
     with st.form(key=f"unified_score_form_{group_name}_{current_idx}"):
-        st.markdown(f"#### 🏌️‍♂️ {current_idx + 1}번째 홀 (코스 {current_course_hole}번홀, Par {current_par}) 스코어 입력")
+        st.markdown(f"#### 🏌️‍♂️ {current_idx + 1}번째 홀 (코스 {current_course_hole}번홀, Par {current_par}) 점수 선택")
         
         form_inputs = {}
-        for player, p_data in players_info.items():
+        for player in players_info.keys():
             if player not in st.session_state.scores:
                 st.session_state.scores[player] = {}
                 
@@ -151,12 +146,13 @@ if menu == "📝 스코어 입력":
             if current_val not in options:
                 current_val = 0
                 
-            col_p1, col_p2 = st.columns([1, 2])
-            with col_p1:
-                st.markdown(f"**{player}**<br><span style='font-size:0.8em; color:gray;'>({p_data['dept']} / Hcap: {p_data['hcap']})</span>", unsafe_allow_html=True)
-            with col_p2:
+            # 모바일에서 한 줄로 컴팩트하게 보이도록 비율 조정 (이름 : 선택칸)
+            col_name, col_select = st.columns([1.2, 1.8])
+            with col_name:
+                st.markdown(f"<div style='padding-top: 8px; font-weight: bold;'>{player}</div>", unsafe_allow_html=True)
+            with col_select:
                 score_diff = st.selectbox(
-                    f"{player} 성적 선택",
+                    f"{player} 성적",
                     options=options,
                     index=options.index(current_val) if current_val in options else 2,
                     format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
@@ -164,7 +160,6 @@ if menu == "📝 스코어 입력":
                     label_visibility="collapsed"
                 )
                 form_inputs[player] = score_diff
-            st.write("")
             
         submitted = st.form_submit_button("💾 이 홀의 스코어 일괄 저장")
         if submitted:
@@ -172,8 +167,38 @@ if menu == "📝 스코어 입력":
                 st.session_state.scores[player][current_course_hole] = diff
             st.success(f"{current_idx + 1}번째 홀 스코어가 저장되었습니다!")
 
+    # --- 입력한 점수 하단 확인용 테이블 (최근 입력한 최대 3홀) ---
+    st.markdown("---")
+    st.markdown("📋 **[최근 입력된 홀 기록 (최근 3홀)]**")
+    
+    # 현재 홀을 기준으로 직전 3개 홀 범위 계산
+    start_history_idx = max(0, current_idx - 2)
+    history_indices = range(start_history_idx, current_idx + 1)
+    
+    history_data = []
+    player_names = list(players_info.keys())
+    
+    for idx in history_indices:
+        h_num = hole_sequence[idx]
+        h_par = PAR_LIST[h_num - 1]
+        row_dict = {"진행순번": f"{idx+1}번째 (코스 {h_num}번, Par {h_par})"}
+        for player in player_names:
+            p_scores = st.session_state.scores.get(player, {})
+            if h_num in p_scores:
+                diff = p_scores[h_num]
+                row_dict[player] = "파(0)" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
+            else:
+                row_dict[player] = "-"
+        history_data.append(row_dict)
+        
+    if history_data:
+        df_history = pd.DataFrame(history_data)
+        st.dataframe(df_history, use_container_width=True, hide_index=True)
+    else:
+        st.caption("아직 기록된 이전 홀 점수가 없습니다.")
+
 # ==========================================
-# [메뉴 2] 실시간 리더보드 (이름, Gross, 핸디캡, Net, 소화홀/현재위치, NA 하단정렬)
+# [메뉴 2] 실시간 리더보드
 # ==========================================
 elif menu == "🏆 실시간 리더보드":
     st.header("🏆 실시간 리더보드 (Net 순위)")
