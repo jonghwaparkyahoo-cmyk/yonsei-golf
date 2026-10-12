@@ -3,165 +3,170 @@ import pandas as pd
 
 st.set_page_config(page_title="연세대 골프 대회 스코어보드", layout="centered", page_icon="⛳")
 
-# --- 1. 코스 파(Par) 정보 (공유해주신 실제 18홀 파 정보) ---
-# 총 72 파 구성: 4, 4, 4, 3, 4, 5, 3, 5, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4
+# --- 1. 코스 파(Par) 정보 (총 72 파) ---
 PAR_LIST = [4, 4, 4, 3, 4, 5, 3, 5, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4]
 
-# --- 2. 세션 상태 초기화 (조편성 및 점수 데이터 관리) ---
+# --- 2. 데이터 세션 초기화 (조편성 및 핸디캡, 스코어) ---
 if 'scores' not in st.session_state:
-    st.session_state.scores = {}  # {선수명: {코스홀번호: 타수차}}
+    st.session_state.scores = {}  # {선수명: {홀번호: 타수차}}
 
-# 초기 조편성 및 핸디캡 데이터 (운영진이 앱 내에서 실시간 수정 가능하도록 세션에 저장)
+# 조편성 시트 및 핸디캡 구조를 반영한 실전 데이터 구조
+# (실제 조편성 시트가 나오면 이 부분에 시트 연동 코드가 들어가게 됩니다)
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
             "start_hole": 1,
-            "players": {"김은혁": 23.0, "이은홍": 25.0, "박주원": "NA"}
+            "players": {
+                "김은혁": {"hcap": 23.0},
+                "이은홍": {"hcap": 25.0},
+                "박주원": {"hcap": "NA"}
+            }
         },
         "5A조": {
             "start_hole": 5,
-            "players": {"노재호": 21.0, "곽재영": 12.5, "최성식": "NA"}
-        },
-        "10B조": {
-            "start_hole": 10,
-            "players": {"김태규": 5.0, "허형회": "NA", "임봉욱": 18.2}
+            "players": {
+                "노재호": {"hcap": 21.0},
+                "곽재영": {"hcap": 12.5},
+                "최성식": {"hcap": "NA"}
+            }
         }
     }
 
 st.title("⛳ 연세대 골프 대회 모바일 스코어보드")
 st.markdown("---")
 
-# --- 네비게이션 메뉴 ---
-menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리 (조편성 수정)"])
+menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리"])
 
 # ==========================================
-# [메뉴 1] 홀별 스코어 입력 (3홀씩 노출 + 앞뒤 이동 + 맥스 더블파 제한)
+# [메뉴 1] 스코어 입력 (통합 테이블 + 단일 홀 입력 및 앞뒤 홀 디스플레이)
 # ==========================================
 if menu == "📝 스코어 입력":
-    st.header("📝 홀별 스코어 입력")
+    st.header("📝 홀별 통합 스코어 입력")
     
     group_list = list(st.session_state.groups.keys())
-    if not group_list:
-        st.warning("등록된 조가 없습니다. 운영진 관리 메뉴에서 조를 먼저 설정해 주세요.")
-    else:
-        group_name = st.selectbox("조 선택", group_list)
-        group_info = st.session_state.groups[group_name]
-        start_hole = group_info["start_hole"]
-        players_dict = group_info["players"]
+    group_name = st.selectbox("조 선택", group_list)
+    group_info = st.session_state.groups[group_name]
+    start_hole = group_info["start_hole"]
+    players_info = group_info["players"]
+    
+    st.info(f"📌 **{group_name}** | 시작 홀: **{start_hole}번 홀** (샷건 방식)")
+    
+    # 시작 홀부터 순서대로 18홀 순환 시퀀스 생성
+    hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
+    
+    # 현재 집중해서 입력할 홀의 순번 관리 (0 ~ 17번째 홀)
+    hole_idx_key = f"current_hole_idx_{group_name}"
+    if hole_idx_key not in st.session_state:
+        st.session_state[hole_idx_key] = 0
         
-        st.info(f"📌 **{group_name}** | 시작 홀: **{start_hole}번 홀** (샷건 방식)")
+    current_idx = st.session_state[hole_idx_key]
+    current_course_hole = hole_sequence[current_idx]
+    current_par = PAR_LIST[current_course_hole - 1]
+    
+    # 상단 네비게이션: 앞뒤 홀로 이동하는 버튼과 현재 위치 표시
+    col_prev, col_info, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if st.button("◀ 이전 홀") and current_idx > 0:
+            st.session_state[hole_idx_key] -= 1
+            st.rerun()
+    with col_info:
+        st.markdown(f"<div style='text-align: center;'><b>전체 {current_idx + 1}번째 홀</b><br>코스 {current_course_hole}번 (Par {current_par})</div>", unsafe_allow_html=True)
+    with col_next:
+        if st.button("다음 홀 ▶") and current_idx < 17:
+            st.session_state[hole_idx_key] += 1
+            st.rerun()
+            
+    st.markdown("---")
+    
+    # 앞뒤 홀 참고 디스플레이 (이전 홀과 다음 홀 정보 간략 표시)
+    prev_h = hole_sequence[current_idx - 1] if current_idx > 0 else "-"
+    next_h = hole_sequence[current_idx + 1] if current_idx < 17 else "-"
+    st.caption(f"👀 [참고] 이전 홀(코스 {prev_h}번) ➔ **현재 입력 홀(코스 {current_course_hole}번, Par {current_par})** ➔ 다음 홀(코스 {next_h}번)")
+
+    # 모든 선수들이 한눈에 들어오는 통합 테이블 형태로 점수 입력
+    with st.form(key=f"unified_score_form_{group_name}_{current_idx}"):
+        st.markdown(f"#### 🏌️‍♂️ {current_idx + 1}번째 홀 (코스 {current_course_hole}번홀, Par {current_par}) 스코어 입력")
         
-        if not players_dict:
-            st.warning("이 조에 편성된 선수가 없습니다.")
-        else:
-            # 시작 홀부터 순서대로 18홀 순환 시퀀스 생성
-            hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
-            
-            page_key = f"page_{group_name}"
-            if page_key not in st.session_state:
-                st.session_state[page_key] = 0  # 3홀씩 총 6페이지 (0~5)
+        form_inputs = {}
+        
+        # 테이블 헤더 느낌의 컬럼 구성
+        for player, p_data in players_info.items():
+            if player not in st.session_state.scores:
+                st.session_state.scores[player] = {}
                 
-            # 앞뒤 이동 버튼
-            col_prev, col_mid, col_next = st.columns([1, 2, 1])
-            with col_prev:
-                if st.button("◀ 이전 홀들") and st.session_state[page_key] > 0:
-                    st.session_state[page_key] -= 1
-                    st.rerun()
-            with col_mid:
-                st.markdown(f"<div style='text-align: center;'><b>구간 {st.session_state[page_key] + 1} / 6</b></div>", unsafe_allow_html=True)
-            with col_next:
-                if st.button("다음 홀들 ▶") and st.session_state[page_key] < 5:
-                    st.session_state[page_key] += 1
-                    st.rerun()
-                    
-            current_page = st.session_state[page_key]
-            chunk_start = current_page * 3
-            chunk_end = min(chunk_start + 3, 18)
-            displayed_indices = range(chunk_start, chunk_end)
+            current_val = st.session_state.scores[player].get(current_course_hole, 0)
             
-            st.markdown(f"**[현재 입력 구간: {chunk_start + 1}번째 ~ {chunk_end}번째 홀]**")
-            
-            with st.form(key=f"score_form_{group_name}_{current_page}"):
-                player_inputs = {}
+            # 더블파 맥스 제한 (파3: +3, 파4: +4, 파5: +5)
+            max_over = current_par
+            options = list(range(-2, max_over + 1))  # -2(이글) ~ 더블파(+Par)
+            if current_val not in options:
+                current_val = 0
                 
-                for player in players_dict.keys():
-                    st.markdown(f"#### 👤 {player}")
-                    if player not in st.session_state.scores:
-                        st.session_state.scores[player] = {}
-                        
-                    for idx in displayed_indices:
-                        course_hole = hole_sequence[idx]
-                        par_val = PAR_LIST[course_hole - 1]
-                        
-                        # 더블파 맥스 제한 (파3는 +3, 파4는 +4, 파5는 +5까지)
-                        max_over = par_val
-                        options = list(range(-2, max_over + 1))  # -2(이글) ~ 더블파(+Par)
-                        
-                        current_val = st.session_state.scores[player].get(course_hole, 0)
-                        if current_val not in options:
-                            current_val = 0
-                            
-                        score_diff = st.selectbox(
-                            f"{idx+1}번째 홀 (코스 {course_hole}번, Par {par_val})",
-                            options=options,
-                            index=options.index(current_val) if current_val in options else 2,
-                            format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
-                            key=f"{player}_hole_{course_hole}"
-                        )
-                        player_inputs[(player, course_hole)] = score_diff
-                    st.markdown("---")
-                    
-                submitted = st.form_submit_button("💾 현재 구간 스코어 저장하기")
-                if submitted:
-                    for (player, course_hole), diff in player_inputs.items():
-                        st.session_state.scores[player][course_hole] = diff
-                    st.success("스코어가 성공적으로 저장되었습니다!")
+            col_p1, col_p2 = st.columns([1, 2])
+            with col_p1:
+                st.markdown(f"**{player}** (Hcap: {p_data['hcap']})")
+            with col_p2:
+                score_diff = st.selectbox(
+                    f"{player} 성적 선택",
+                    options=options,
+                    index=options.index(current_val) if current_val in options else 2,
+                    format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
+                    key=f"input_{player}_{current_course_hole}",
+                    label_visibility="collapsed"
+                )
+                form_inputs[player] = score_diff
+            st.write("") # 간격 조정
+            
+        submitted = st.form_submit_button("💾 이 홀의 스코어 일괄 저장")
+        if submitted:
+            for player, diff in form_inputs.items():
+                st.session_state.scores[player][current_course_hole] = diff
+            st.success(f"{current_idx + 1}번째 홀 스코어가 저장되었습니다!")
 
 # ==========================================
-# [메뉴 2] 실시간 리더보드 (Net 순위 중심, NA 선수 하단 정렬)
+# [메뉴 2] 실시간 리더보드 (이름, Gross, 핸디캡, Net, 소화홀/현재위치, NA 하단정렬)
 # ==========================================
 elif menu == "🏆 실시간 리더보드":
     st.header("🏆 실시간 리더보드 (Net 순위)")
     
     leaderboard_data = []
-    all_players_info = []
     
     for group_name, info in st.session_state.groups.items():
         start_hole = info["start_hole"]
         hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
-        for player, hcap in info["players"].items():
-            all_players_info.append((player, hcap, start_hole, hole_sequence))
-            
-    for player, hcap, start_hole, hole_sequence in all_players_info:
-        p_scores = st.session_state.scores.get(player, {})
-        played_count = len(p_scores)
         
-        gross_total = 0
-        for h, diff in p_scores.items():
-            gross_total += (PAR_LIST[h-1] + diff)
+        for player, p_data in info["players"].items():
+            hcap = p_data["hcap"]
+            p_scores = st.session_state.scores.get(player, {})
+            played_count = len(p_scores)
             
-        has_hcap = (hcap != "NA")
-        net_score = (gross_total - float(hcap)) if (played_count > 0 and has_hcap) else "-"
-        
-        if played_count > 0:
-            current_nth_hole = played_count if played_count <= 18 else 18
-            current_course_hole = hole_sequence[current_nth_hole - 1]
-            status = f"{played_count}/18홀 (코스 {current_course_hole}번홀 진행중)"
-        else:
-            status = "0/18홀 (출발 대기)"
+            gross_total = 0
+            for h, diff in p_scores.items():
+                gross_total += (PAR_LIST[h-1] + diff)
+                
+            has_hcap = (hcap != "NA")
+            net_score = (gross_total - float(hcap)) if (played_count > 0 and has_hcap) else "-"
             
-        leaderboard_data.append({
-            "선수명": player,
-            "Gross": gross_total if played_count > 0 else "-",
-            "핸디캡": hcap,
-            "Net": net_score,
-            "소화홀/현재위치": status,
-            "Sort_HasHcap": 0 if has_hcap else 1,
-            "Sort_Net": net_score if (played_count > 0 and has_hcap) else 999
-        })
-        
+            if played_count > 0:
+                current_nth_hole = played_count if played_count <= 18 else 18
+                current_course_hole = hole_sequence[current_nth_hole - 1]
+                status = f"{played_count}/18홀 (코스 {current_course_hole}번홀 진행중)"
+            else:
+                status = "0/18홀 (출발 대기)"
+                
+            leaderboard_data.append({
+                "선수명": player,
+                "Gross": gross_total if played_count > 0 else "-",
+                "핸디캡": hcap,
+                "Net": net_score,
+                "소화홀/현재위치": status,
+                "Sort_HasHcap": 0 if has_hcap else 1,
+                "Sort_Net": net_score if (played_count > 0 and has_hcap) else 999
+            })
+            
     df_lb = pd.DataFrame(leaderboard_data)
     if not df_lb.empty:
+        # 핸디캡 있는 선수 우선 정렬 후 Net 점수 낮은 순, NA 선수는 하단 배치
         df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
         df_display = df_lb[["선수명", "Gross", "핸디캡", "Net", "소화홀/현재위치"]].reset_index(drop=True)
         df_display.index += 1  # 1위부터 순위 표시
@@ -170,80 +175,14 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (당일 조편성 변경 및 선수 수정)
+# [메뉴 3] 운영진 관리 (조편성 및 핸디캡 연동 관리)
 # ==========================================
-elif menu == "⚙️ 운영진 관리 (조편성 수정)":
-    st.header("⚙️ 운영진 당일 조편성 관리 패널")
-    st.markdown("경기 당일 불참자 발생, 선수 이동, 시작 홀 변경 등을 실시간으로 수정할 수 있습니다.")
+elif menu == "⚙️ 운영진 관리":
+    st.header("⚙️ 운영진 관리 패널")
+    st.markdown("조편성 시트와 핸디캡 데이터베이스를 기반으로 한 조 및 선수 관리 화면입니다.")
     
-    st.subheader("📋 현재 조편성 현황 및 수정")
-    
-    # 조별로 펼쳐서 수정할 수 있도록 구성
-    groups_to_delete = []
-    for group_name, info in list(st.session_state.groups.items()):
-        with st.expander(f"조 이름: {group_name} (시작 홀: {info['start_hole']}번)"):
-            new_start_hole = st.number_input(f"시작 홀 변경 ({group_name})", min_value=1, max_value=18, value=int(info['start_hole']), key=f"sh_{group_name}")
-            st.session_state.groups[group_name]['start_hole'] = new_start_hole
-            
-            st.markdown("**소속 선수 및 핸디캡**")
-            players_to_delete = []
-            for player, hcap in list(info['players'].items()):
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
-                with col2:
-                    new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=str(hcap), key=f"phcap_{group_name}_{player}")
-                with col3:
-                    if st.button("삭제", key=f"del_p_{group_name}_{player}"):
-                        players_to_delete.append(player)
-                        
-                # 이름이나 핸디캡 변경 반영 로직
-                if new_name != player and new_name not in st.session_state.groups[group_name]['players']:
-                    st.session_state.groups[group_name]['players'][new_name] = st.session_state.groups[group_name]['players'].pop(player)
-                    player = new_name
-                try:
-                    if new_hcap.upper() == "NA":
-                        st.session_state.groups[group_name]['players'][player] = "NA"
-                    else:
-                        st.session_state.groups[group_name]['players'][player] = float(new_hcap)
-                except ValueError:
-                    pass
-                    
-            for p in players_to_delete:
-                del st.session_state.groups[group_name]['players'][p]
-                st.rerun()
-                
-            # 선수 추가 폼
-            with st.form(key=f"add_player_{group_name}"):
-                col_ap1, col_ap2, col_ap3 = st.columns([2, 2, 1])
-                with col_ap1:
-                    add_name = st.text_input("추가할 선수명")
-                with col_ap2:
-                    add_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value="NA")
-                with col_ap3:
-                    add_btn = st.form_submit_button("선수 추가")
-                if add_btn and add_name:
-                    st.session_state.groups[group_name]['players'][add_name] = float(add_hcap) if add_hcap.upper()!="NA" else "NA"
-                    st.success(f"{add_name} 선수가 추가되었습니다!")
-                    st.rerun()
-                    
-            if st.button(f"🗑️ '{group_name}' 조 전체 삭제", key=f"del_g_{group_name}"):
-                groups_to_delete.append(group_name)
-                
-    for g in groups_to_delete:
-        del st.session_state.groups[g]
-        st.rerun()
-        
-    st.markdown("---")
-    st.subheader("➕ 새 조 추가하기")
-    with st.form(key="add_group_form"):
-        new_g_name = st.text_input("새 조 이름 (예: 6A조)")
-        new_g_start = st.number_input("시작 홀", min_value=1, max_value=18, value=1)
-        add_g_btn = st.form_submit_button("조 생성하기")
-        if add_g_btn and new_g_name:
-            if new_g_name not in st.session_state.groups:
-                st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
-                st.success(f"'{new_g_name}' 조가 생성되었습니다!")
-                st.rerun()
-            else:
-                st.error("이미 존재하는 조 이름입니다.")
+    for group_name, info in st.session_state.groups.items():
+        with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
+            st.write(f"**편성된 선수 및 핸디캡:**")
+            for p, d in info["players"].items():
+                st.text(f"- {p} (핸디캡: {d['hcap']})")
