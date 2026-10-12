@@ -20,16 +20,17 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 연결 및 데이터 동기화 ---
+# --- 2. 세션 상태 초기화 및 구글 시트 'Scores' 탭 연동 ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
+    # Scores 탭에서 실시간 점수 데이터를 읽어옴 (ttl=0으로 캐시 방지)
     df_scores_db = conn.read(worksheet="Scores", ttl=0)
     
-    # 구글 시트의 데이터를 세션에 반영
     if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
+        st.session_state.scores = {}
         for _, row in df_scores_db.iterrows():
             p_name = str(row["선수명"])
             h_num = int(row["홀번호"])
@@ -38,10 +39,10 @@ try:
                 st.session_state.scores[p_name] = {}
             st.session_state.scores[p_name][h_num] = diff_val
 except Exception as e:
-    # 시트 미연동 또는 초기 상태일 때 로컬 세션 유지
+    # 시트 연동 전이거나 오프라인 상태일 때는 로컬 세션 유지
     pass
 
-# --- 3. 조편성 데이터 ---
+# --- 3. 안정적으로 고정된 조편성 데이터 (운영진 관리로 실시간 수정 가능) ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -193,7 +194,7 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트 'Scores' 탭에 데이터 전송
+            # 구글 시트 'Scores' 탭에 전체 점수 상태 업데이트
             try:
                 all_scores_list = []
                 for p, holes in st.session_state.scores.items():
@@ -202,13 +203,13 @@ if menu == "📝 스코어 입력":
                 df_to_save = pd.DataFrame(all_scores_list)
                 conn.update(worksheet="Scores", data=df_to_save)
             except Exception as e:
-                st.warning("구글 시트 저장 권한(Service Account)이 설정되지 않았거나 오프라인 상태입니다. (로컬 반영 완료)")
+                st.warning("구글 시트 쓰기 권한(Service Account) 설정 확인 필요 (로컬 반영 완료)")
             
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
             st.success("저장 완료! 다음 홀로 이동합니다.")
             st.rerun()
 
-    # 최근 입력 홀 기록 테이블
+    # 최근 입력 홀 기록 테이블 ("파"는 "0"으로 표시)
     st.markdown("---")
     st.markdown("📋 **[최근 입력된 홀 기록]**")
     
@@ -300,12 +301,11 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (세션 상태 기반 패스워드 고정)
+# [메뉴 3] 운영진 관리 (비밀번호 프로텍트)
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
     
-    # 세션 상태에 인증 여부 저장
     if 'admin_auth' not in st.session_state:
         st.session_state.admin_auth = False
         
