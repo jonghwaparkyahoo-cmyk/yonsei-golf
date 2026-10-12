@@ -20,28 +20,26 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 연결 (ttl=0으로 설정하여 캐시 없이 실시간 최신 데이터 로드) ---
+# --- 2. 구글 시트 연결 및 데이터 동기화 ---
+if 'scores' not in st.session_state:
+    st.session_state.scores = {}
+
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    # 구글 시트에서 점수 데이터 읽어오기 (ttl=0 필수: 실시간 반영을 위해 캐시 방지)
     df_scores_db = conn.read(worksheet="Scores", ttl=0)
     
-    # 불러온 DB 데이터를 앱 내 세션(scores) 구조로 매핑
-    if 'scores' not in st.session_state:
-        st.session_state.scores = {}
-        if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
-            for _, row in df_scores_db.iterrows():
-                p_name = str(row["선수명"])
-                h_num = int(row["홀번호"])
-                diff_val = int(row["점수차"])
-                if p_name not in st.session_state.scores:
-                    st.session_state.scores[p_name] = {}
-                st.session_state.scores[p_name][h_num] = diff_val
+    # 구글 시트의 데이터를 세션에 반영
+    if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
+        for _, row in df_scores_db.iterrows():
+            p_name = str(row["선수명"])
+            h_num = int(row["홀번호"])
+            diff_val = int(row["점수차"])
+            if p_name not in st.session_state.scores:
+                st.session_state.scores[p_name] = {}
+            st.session_state.scores[p_name][h_num] = diff_val
 except Exception as e:
-    st.warning(f"구글 시트 연동 중이거나 데이터를 읽어오는 중입니다. (기본 모드 작동)")
-    if 'scores' not in st.session_state:
-        st.session_state.scores = {}
+    # 시트 미연동 또는 초기 상태일 때 로컬 세션 유지
+    pass
 
 # --- 3. 조편성 데이터 ---
 if 'groups' not in st.session_state:
@@ -195,7 +193,7 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트 'Scores' 탭에 전체 점수 상태를 통째로 업데이트하는 로직
+            # 구글 시트 'Scores' 탭에 데이터 전송
             try:
                 all_scores_list = []
                 for p, holes in st.session_state.scores.items():
@@ -204,10 +202,10 @@ if menu == "📝 스코어 입력":
                 df_to_save = pd.DataFrame(all_scores_list)
                 conn.update(worksheet="Scores", data=df_to_save)
             except Exception as e:
-                st.error(f"구글 시트 저장 실패: {e}")
+                st.warning("구글 시트 저장 권한(Service Account)이 설정되지 않았거나 오프라인 상태입니다. (로컬 반영 완료)")
             
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
-            st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
+            st.success("저장 완료! 다음 홀로 이동합니다.")
             st.rerun()
 
     # 최근 입력 홀 기록 테이블
@@ -302,15 +300,97 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리
+# [메뉴 3] 운영진 관리 (세션 상태 기반 패스워드 고정)
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
     
-    admin_password = st.text_input("운영진 비밀번호를 입력하세요", type="password")
+    # 세션 상태에 인증 여부 저장
+    if 'admin_auth' not in st.session_state:
+        st.session_state.admin_auth = False
+        
     CORRECT_PASSWORD = "yonsei2026"
     
-    if admin_password == CORRECT_PASSWORD:
-        st.success("인증되었습니다.")
-    elif admin_password != "":
-        st.error("비밀번호가 틀렸습니다.")
+    if not st.session_state.admin_auth:
+        admin_password = st.text_input("운영진 비밀번호를 입력하세요", type="password")
+        if admin_password == CORRECT_PASSWORD:
+            st.session_state.admin_auth = True
+            st.rerun()
+        elif admin_password != "":
+            st.error("비밀번호가 틀렸습니다.")
+    else:
+        st.success("인증되었습니다. 당일 조편성 및 선수 명단을 관리할 수 있습니다.")
+        if st.button("🔒 로그아웃 (잠금)"):
+            st.session_state.admin_auth = False
+            st.rerun()
+            
+        st.markdown("---")
+        groups_to_delete = []
+        for group_name, info in list(st.session_state.groups.items()):
+            with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
+                new_start_hole = st.number_input(f"시작 홀 변경 ({group_name})", min_value=1, max_value=18, value=int(info['start_hole']), key=f"sh_{group_name}")
+                st.session_state.groups[group_name]['start_hole'] = new_start_hole
+                
+                st.markdown("**소속 선수 및 핸디캡 수정**")
+                players_to_delete = []
+                for player, p_val in list(info['players'].items()):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    with col1:
+                        new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
+                    with col2:
+                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=str(p_val['hcap']), key=f"phcap_{group_name}_{player}")
+                    with col3:
+                        if st.button("삭제", key=f"del_p_{group_name}_{player}"):
+                            players_to_delete.append(player)
+                            
+                    if new_name != player and new_name not in st.session_state.groups[group_name]['players']:
+                        st.session_state.groups[group_name]['players'][new_name] = st.session_state.groups[group_name]['players'].pop(player)
+                        player = new_name
+                    try:
+                        if new_hcap.upper() == "NA":
+                            st.session_state.groups[group_name]['players'][player]['hcap'] = "NA"
+                        else:
+                            st.session_state.groups[group_name]['players'][player]['hcap'] = float(new_hcap)
+                    except ValueError:
+                        pass
+                        
+                for p in players_to_delete:
+                    del st.session_state.groups[group_name]['players'][p]
+                    st.rerun()
+                    
+                with st.form(key=f"add_player_{group_name}"):
+                    col_ap1, col_ap2, col_ap3, col_ap4 = st.columns([2, 1.5, 1.5, 1])
+                    with col_ap1:
+                        add_name = st.text_input("선수명")
+                    with col_ap2:
+                        add_dept = st.text_input("소속", value="-")
+                    with col_ap3:
+                        add_hcap = st.text_input("핸디캡", value="NA")
+                    with col_ap4:
+                        add_btn = st.form_submit_button("추가")
+                    if add_btn and add_name:
+                        h_val = float(add_hcap) if add_hcap.upper()!="NA" else "NA"
+                        st.session_state.groups[group_name]['players'][add_name] = {"hcap": h_val, "dept": add_dept}
+                        st.success(f"{add_name} 선수 추가 완료!")
+                        st.rerun()
+                        
+                if st.button(f"🗑️ '{group_name}' 조 전체 삭제", key=f"del_g_{group_name}"):
+                    groups_to_delete.append(group_name)
+                    
+        for g in groups_to_delete:
+            del st.session_state.groups[g]
+            st.rerun()
+            
+        st.markdown("---")
+        st.subheader("➕ 새 조 추가하기")
+        with st.form(key="add_group_form"):
+            new_g_name = st.text_input("새 조 이름 (예: 6A조)")
+            new_g_start = st.number_input("시작 홀", min_value=1, max_value=18, value=1)
+            add_g_btn = st.form_submit_button("조 생성하기")
+            if add_g_btn and new_g_name:
+                if new_g_name not in st.session_state.groups:
+                    st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
+                    st.success(f"'{new_g_name}' 조가 생성되었습니다!")
+                    st.rerun()
+                else:
+                    st.error("이미 존재하는 조 이름입니다.")
