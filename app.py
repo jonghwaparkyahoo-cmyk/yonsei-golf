@@ -100,7 +100,7 @@ st.markdown("---")
 menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리"])
 
 # ==========================================
-# [메뉴 1] 스코어 입력 (컴팩트 가로 배치 + 자동 다음홀 순환 + 반전된 최근 기록 테이블)
+# [메뉴 1] 스코어 입력 (타이틀 간소화 + 자동 다음홀 순환)
 # ==========================================
 if menu == "📝 스코어 입력":
     st.header("📝 홀별 스코어 입력")
@@ -138,9 +138,9 @@ if menu == "📝 스코어 입력":
             
     st.markdown("---")
 
-    # 스코어 입력 Form (컴팩트 가로 배치)
+    # 스코어 입력 Form (간소화된 타이틀: "Hole X, Par Y")
     with st.form(key=f"unified_score_form_{group_name}_{current_idx}"):
-        st.markdown(f"#### 🏌️‍♂️ {current_idx + 1}번째 홀 (코스 {current_course_hole}번홀, Par {current_par})")
+        st.markdown(f"#### 🏌️‍♂️ Hole {current_course_hole}, Par {current_par}")
         
         form_inputs = {}
         for player in players_info.keys():
@@ -155,7 +155,6 @@ if menu == "📝 스코어 입력":
             if current_val not in options:
                 current_val = 0
                 
-            # 모바일 최적화 컴팩트 가로 배치 비율
             col_name, col_select = st.columns([1.5, 2.5])
             with col_name:
                 st.markdown(f"<div style='padding-top: 6px; font-weight: bold; font-size: 0.95rem;'>{player}</div>", unsafe_allow_html=True)
@@ -175,7 +174,7 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 저장 후 자동으로 다음 홀로 이동 (18홀 완료 시 0번째(첫 홀)로 순환)
+            # 저장 후 자동 순환 이동
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
             st.success("저장 완료! 다음 홀로 이동합니다.")
             st.rerun()
@@ -210,7 +209,7 @@ if menu == "📝 스코어 입력":
         st.caption("아직 기록된 점수가 없습니다.")
 
 # ==========================================
-# [메뉴 2] 실시간 리더보드
+# [메뉴 2] 실시간 리더보드 (요청하신 컬럼 및 정수형 포맷 적용)
 # ==========================================
 elif menu == "🏆 실시간 리더보드":
     st.header("🏆 실시간 리더보드 (Net 순위)")
@@ -230,29 +229,46 @@ elif menu == "🏆 실시간 리더보드":
                 gross_total += (PAR_LIST[h-1] + diff)
                 
             has_hcap = (hcap != "NA")
-            net_score = (gross_total - float(hcap)) if (played_count > 0 and has_hcap) else "-"
             
-            if played_count > 0:
-                current_nth_hole = played_count if played_count <= 18 else 18
-                current_course_hole = hole_sequence[current_nth_hole - 1]
-                status = f"{played_count}/18홀 (코스 {current_course_hole}번홀 진행중)"
+            # Net 점수 계산 및 소수점 제거 (정수 반올림/변환)
+            if played_count > 0 and has_hcap:
+                net_val = round(gross_total - float(hcap))
+                net_score = str(net_val)
             else:
-                status = "0/18홀 (출발 대기)"
+                net_score = "-"
+                
+            # 핸디캡 소수점 제거 (숫자인 경우 정수형으로 변환)
+            if has_hcap:
+                display_hcap = str(int(round(float(hcap))))
+            else:
+                display_hcap = "NA"
+                
+            # 현재위치 로직: 0(대기), F(18홀 완료), 혹은 마지막 입력된 코스 홀 번호
+            if played_count == 0:
+                current_pos = "0"
+            elif played_count >= 18:
+                current_pos = "F"
+            else:
+                # 마지막으로 입력된 코스 홀 번호 추출
+                last_played_idx = played_count - 1
+                current_pos = str(hole_sequence[last_played_idx])
                 
             leaderboard_data.append({
                 "선수명": player,
-                "Gross": gross_total if played_count > 0 else "-",
-                "핸디캡": hcap,
+                "핸디캡": display_hcap,
+                "Gross": str(gross_total) if played_count > 0 else "-",
                 "Net": net_score,
-                "소화홀/현재위치": status,
+                "시작홀": str(start_hole),
+                "현재위치": current_pos,
                 "Sort_HasHcap": 0 if has_hcap else 1,
-                "Sort_Net": net_score if (played_count > 0 and has_hcap) else 999
+                "Sort_Net": float(net_score) if net_score != "-" else 999
             })
             
     df_lb = pd.DataFrame(leaderboard_data)
     if not df_lb.empty:
         df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
-        df_display = df_lb[["선수명", "Gross", "핸디캡", "Net", "소화홀/현재위치"]].reset_index(drop=True)
+        # 요청하신 컬럼 순서 적용
+        df_display = df_lb[["선수명", "핸디캡", "Gross", "Net", "시작홀", "현재위치"]].reset_index(drop=True)
         df_display.index += 1
         st.dataframe(df_display, use_container_width=True)
     else:
