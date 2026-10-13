@@ -5,17 +5,19 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
-# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (숨김) ---
-# st.write("### 🔍 디버깅 모드")
-# try:
-#     raw_key = st.secrets["gcp_json"]
-#     st.write(f"Key 시작 부분: `{raw_key[:50]}`")
-#     st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
-#     st.write(f"문자열 길이: {len(raw_key)}")
-#     st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
-# except Exception as e:
-#     st.error(f"Secrets 자체를 읽지 못함: {e}")
-# st.markdown("---")
+"""
+# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (현재 숨김 처리됨) ---
+st.write("### 🔍 디버깅 모드")
+try:
+    raw_key = st.secrets["gcp_json"]
+    st.write(f"Key 시작 부분: `{raw_key[:50]}`")
+    st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
+    st.write(f"문자열 길이: {len(raw_key)}")
+    st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
+except Exception as e:
+    st.error(f"Secrets 자체를 읽지 못함: {e}")
+st.markdown("---")
+"""
 
 st.set_page_config(
     page_title="연세대 골프 대회 모바일 스코어보드", 
@@ -96,7 +98,7 @@ def load_scores_from_gsheet():
 # 앱 실행 시점 최신 데이터 로드
 load_scores_from_gsheet()
 
-# 🚨 [핵심 업그레이드] 덮어쓰기 방지 및 스마트 병합(Merge) 저장 로직
+# 🚨 스마트 병합(Merge) 저장 로직
 def save_scores_to_gsheet(new_scores_dict):
     try:
         client = get_gspread_client()
@@ -108,7 +110,6 @@ def save_scores_to_gsheet(new_scores_dict):
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
             
-        # 1. 구글 시트의 최신 데이터를 읽어옴 (다른 사람이 입력한 점수 보존)
         existing_data = worksheet.get_all_records()
         db_scores = {}
         if existing_data:
@@ -120,14 +121,12 @@ def save_scores_to_gsheet(new_scores_dict):
                     db_scores[p] = {}
                 db_scores[p][h] = d
                 
-        # 2. 내가 방금 입력한 점수만 최신 DB에 안전하게 끼워넣기(Merge)
         for p, holes in new_scores_dict.items():
             if p not in db_scores:
                 db_scores[p] = {}
             for h, d in holes.items():
                 db_scores[p][h] = d
                 
-        # 3. 합쳐진 데이터를 시트에 저장
         worksheet.clear()
         worksheet.append_row(["선수명", "홀번호", "점수차"])
         rows = []
@@ -137,7 +136,6 @@ def save_scores_to_gsheet(new_scores_dict):
         if rows:
             worksheet.append_rows(rows)
             
-        # 4. 내 폰의 화면 데이터도 최신 상태로 동기화
         st.session_state.scores = db_scores
         return True
     except Exception as e:
@@ -237,20 +235,40 @@ st.markdown("---")
 # ==========================================
 if menu == "📝 스코어 입력":
     
+    group_list = list(st.session_state.groups.keys())
+    if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
+        st.session_state.selected_group = group_list[0]
+        
     col_title, col_refresh = st.columns([2, 1])
     with col_title:
         st.header("📝 스코어 입력")
     with col_refresh:
-        # 수동 동기화 버튼 (언제든 찝찝할 때 클릭하면 DB 최신화)
+        # 🚨 [스마트 동기화] 데이터 갱신 시 빈 홀 찾아서 자동 점프
         if st.button("🔄 데이터 갱신"):
             load_scores_from_gsheet()
-            st.toast("✅ 최신 데이터를 불러왔습니다!")
-    
-    group_list = list(st.session_state.groups.keys())
-    
-    if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
-        st.session_state.selected_group = group_list[0]
-        
+            
+            curr_g = st.session_state.selected_group
+            g_info = st.session_state.groups[curr_g]
+            s_hole = g_info["start_hole"]
+            h_seq = [(s_hole - 1 + i) % 18 + 1 for i in range(18)]
+            
+            a_idx = 0
+            for i, h_num in enumerate(h_seq):
+                completed = True
+                for p in g_info["players"].keys():
+                    if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
+                        completed = False
+                        break
+                if not completed:
+                    a_idx = i
+                    break
+            else:
+                a_idx = 17 # 전부 입력 시 마지막 홀로
+                
+            st.session_state[f"current_hole_idx_{curr_g}"] = a_idx
+            st.toast("✅ 최신 데이터를 불러와 미입력 홀로 이동했습니다!")
+            st.rerun()
+            
     default_idx = group_list.index(st.session_state.selected_group)
     group_name = st.selectbox("조 선택", group_list, index=default_idx)
     st.session_state.selected_group = group_name
@@ -264,8 +282,23 @@ if menu == "📝 스코어 입력":
     hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
     
     hole_idx_key = f"current_hole_idx_{group_name}"
+    
+    # 🚨 [최초 진입 시 스마트 점프] 미입력 홀 자동 탐색
     if hole_idx_key not in st.session_state:
-        st.session_state[hole_idx_key] = 0
+        auto_idx = 0
+        for idx, h_num in enumerate(hole_sequence):
+            is_completed = True
+            for p in players_info.keys():
+                if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
+                    is_completed = False
+                    break
+            if not is_completed:
+                auto_idx = idx
+                break
+        else:
+            auto_idx = 17
+            
+        st.session_state[hole_idx_key] = auto_idx
         
     current_idx = st.session_state[hole_idx_key]
     current_course_hole = hole_sequence[current_idx]
@@ -316,18 +349,15 @@ if menu == "📝 스코어 입력":
             
         submitted = st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔")
         if submitted:
-            # 내가 방금 입력한 '현재 홀의 데이터'만 추출하여 병합 함수로 보냄
             new_inputs = {}
             for player, diff in form_inputs.items():
                 new_inputs[player] = {current_course_hole: diff}
             
-            # 병합 및 저장 실행
             success = save_scores_to_gsheet(new_inputs)
             
             if success:
                 st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
                 
-                # 다음 홀 입력창 초기화 보장
                 keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
                 for k in keys_to_delete:
                     del st.session_state[k]
@@ -335,11 +365,11 @@ if menu == "📝 스코어 입력":
                 st.session_state[hole_idx_key] = (current_idx + 1) % 18
                 st.rerun()
 
-    # 조별 입력 현황 확인 테이블 (최대 5홀까지 확장하여 확인 용이)
+    # 조별 입력 현황 확인 테이블
     st.markdown("---")
     st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
     
-    start_history_idx = max(0, current_idx - 4) # 최근 5개 홀을 보여주어 흐름을 알기 쉽게 함
+    start_history_idx = max(0, current_idx - 4)
     history_indices = list(range(start_history_idx, current_idx + 1))
     
     history_table_rows = []
@@ -467,14 +497,12 @@ elif menu == "⚙️ 관리":
         if confirm_reset:
             if st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행"):
                 try:
-                    # 구글 시트 초기화
                     client = get_gspread_client()
                     sheet = client.open_by_url(st.secrets["spreadsheet_url"])
                     worksheet = sheet.worksheet("Scores")
                     worksheet.clear()
                     worksheet.append_row(["선수명", "홀번호", "점수차"])
                     
-                    # 로컬 화면 초기화
                     st.session_state.scores = {}
                     
                     st.success("모든 스코어 기록이 완벽하게 초기화되었습니다!")
