@@ -5,6 +5,19 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
+# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 ---
+st.write("### 🔍 디버깅 모드")
+try:
+    raw_key = st.secrets["connections"]["gsheets"]["private_key"]
+    # 키 값이 너무 기니까 앞 50글자와 뒤 50글자만 화면에 출력 (보안 유지)
+    st.write(f"Key 시작 부분: `{raw_key[:50]}`")
+    st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
+    st.write(f"문자열 길이: {len(raw_key)}")
+    st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
+except Exception as e:
+    st.error(f"Secrets 자체를 읽지 못함: {e}")
+st.markdown("---")
+
 st.set_page_config(page_title="연세대 골프 대회 모바일 스코어보드", layout="centered", page_icon="⛳")
 
 # 15초마다 자동 새로고침 (모든 기기에서 실시간 동기화 유지)
