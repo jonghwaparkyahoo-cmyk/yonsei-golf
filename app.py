@@ -5,19 +5,25 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
-# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 ---
-st.write("### 🔍 디버깅 모드")
-try:
-    raw_key = st.secrets["gcp_json"]
-    st.write(f"Key 시작 부분: `{raw_key[:50]}`")
-    st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
-    st.write(f"문자열 길이: {len(raw_key)}")
-    st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
-except Exception as e:
-    st.error(f"Secrets 자체를 읽지 못함: {e}")
-st.markdown("---")
+# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (주석 처리됨) ---
+# st.write("### 🔍 디버깅 모드")
+# try:
+#     raw_key = st.secrets["gcp_json"]
+#     st.write(f"Key 시작 부분: `{raw_key[:50]}`")
+#     st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
+#     st.write(f"문자열 길이: {len(raw_key)}")
+#     st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
+# except Exception as e:
+#     st.error(f"Secrets 자체를 읽지 못함: {e}")
+# st.markdown("---")
 
-st.set_page_config(page_title="연세대 골프 대회 모바일 스코어보드", layout="centered", page_icon="⛳")
+# 📱 메뉴 선택 시 사이드바 자동 닫힘 설정 (initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="연세대 골프 대회 모바일 스코어보드", 
+    layout="centered", 
+    page_icon="⛳",
+    initial_sidebar_state="collapsed"
+)
 
 # 15초마다 자동 새로고침 (모든 기기에서 실시간 동기화 유지)
 st_autorefresh(interval=15000, key="datarefresh")
@@ -46,7 +52,7 @@ def get_gspread_client():
     ]
     json_str = st.secrets["gcp_json"]
     
-    # 🚨 단어 하나 추가: strict=False 를 넣어서 엔터(줄바꿈)가 섞여 있어도 에러 없이 통과시킴
+    # 🚨 엔터(줄바꿈)가 섞여 있어도 에러 없이 통과시킴
     creds_dict = json.loads(json_str, strict=False)
     
     if "private_key" in creds_dict:
