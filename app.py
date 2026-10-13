@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="연세대 골프 대회 스코어보드", layout="centered", page_icon="⛳")
 
@@ -20,13 +22,12 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 세션 상태 초기화 및 구글 시트 'Scores' 탭 연동 ---
+# --- 2. 구글 시트 연결 및 실시간 데이터 동기화 (Read) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
 try:
     conn = st.connection("gsheets", type=GSheetsConnection)
-    # Scores 탭에서 실시간 점수 데이터를 읽어옴 (ttl=0으로 캐시 방지)
     df_scores_db = conn.read(worksheet="Scores", ttl=0)
     
     if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
@@ -39,10 +40,41 @@ try:
                 st.session_state.scores[p_name] = {}
             st.session_state.scores[p_name][h_num] = diff_val
 except Exception as e:
-    # 시트 연동 전이거나 오프라인 상태일 때는 로컬 세션 유지
     pass
 
-# --- 3. 안정적으로 고정된 조편성 데이터 (운영진 관리로 실시간 수정 가능) ---
+# 구글 시트에 점수를 안전하게 저장하는 함수 (gspread 활용)
+def save_scores_to_gsheet(scores_dict):
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds_dict = dict(st.secrets["connections.gsheets"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        client = gspread.authorize(creds)
+        spreadsheet_url = st.secrets["connections.gsheets"]["spreadsheet"]
+        sheet = client.open_by_url(spreadsheet_url)
+        
+        try:
+            worksheet = sheet.worksheet("Scores")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
+            
+        worksheet.clear()
+        worksheet.append_row(["선수명", "홀번호", "점수차"])
+        
+        rows = []
+        for p, holes in scores_dict.items():
+            for h, d in holes.items():
+                rows.append([p, h, d])
+        if rows:
+            worksheet.append_rows(rows)
+        return True
+    except Exception as e:
+        st.warning(f"구글 시트 저장 중 오류 발생 (Secrets 설정 확인 필요): {e}")
+        return False
+
+# --- 3. 조편성 데이터 ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -123,13 +155,21 @@ st.markdown("---")
 menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리"])
 
 # ==========================================
-# [메뉴 1] 스코어 입력
+# [메뉴 1] 스코어 입력 (조 기억 기능 포함)
 # ==========================================
 if menu == "📝 스코어 입력":
     st.header("📝 홀별 스코어 입력")
     
     group_list = list(st.session_state.groups.keys())
-    group_name = st.selectbox("조 선택", group_list)
+    
+    # 세션에 이전 선택 조가 기억되어 있도록 처리
+    if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
+        st.session_state.selected_group = group_list[0]
+        
+    default_idx = group_list.index(st.session_state.selected_group)
+    group_name = st.selectbox("조 선택", group_list, index=default_idx)
+    st.session_state.selected_group = group_name  # 선택한 조 기억
+    
     group_info = st.session_state.groups[group_name]
     start_hole = group_info["start_hole"]
     players_info = group_info["players"]
@@ -194,22 +234,14 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트 'Scores' 탭에 전체 점수 상태 업데이트
-            try:
-                all_scores_list = []
-                for p, holes in st.session_state.scores.items():
-                    for h, d in holes.items():
-                        all_scores_list.append({"선수명": p, "홀번호": h, "점수차": d})
-                df_to_save = pd.DataFrame(all_scores_list)
-                conn.update(worksheet="Scores", data=df_to_save)
-            except Exception as e:
-                st.warning("구글 시트 쓰기 권한(Service Account) 설정 확인 필요 (로컬 반영 완료)")
+            # 구글 시트에 실시간 반영
+            save_scores_to_gsheet(st.session_state.scores)
             
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
-            st.success("저장 완료! 다음 홀로 이동합니다.")
+            st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
             st.rerun()
 
-    # 최근 입력 홀 기록 테이블 ("파"는 "0"으로 표시)
+    # 최근 입력 홀 기록 테이블
     st.markdown("---")
     st.markdown("📋 **[최근 입력된 홀 기록]**")
     
@@ -301,7 +333,7 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (비밀번호 프로텍트)
+# [메뉴 3] 운영진 관리 (테스트 데이터 초기화 버튼 추가)
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
@@ -319,12 +351,25 @@ elif menu == "⚙️ 운영진 관리":
         elif admin_password != "":
             st.error("비밀번호가 틀렸습니다.")
     else:
-        st.success("인증되었습니다. 당일 조편성 및 선수 명단을 관리할 수 있습니다.")
+        st.success("인증되었습니다. 당일 조편성 및 스코어 데이터를 관리할 수 있습니다.")
         if st.button("🔒 로그아웃 (잠금)"):
             st.session_state.admin_auth = False
             st.rerun()
             
         st.markdown("---")
+        
+        # --- 테스트 데이터 일괄 초기화 기능 ---
+        st.subheader("🚨 경기 전 데이터 초기화")
+        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 일괄 삭제하려면 아래 버튼을 누르세요.")
+        if st.button("🗑️ 모든 스코어 기록 초기화 (데이터 리셋)"):
+            st.session_state.scores = {}
+            save_scores_to_gsheet(st.session_state.scores)
+            st.success("모든 스코어 기록이 초기화되었습니다!")
+            st.rerun()
+            
+        st.markdown("---")
+        st.subheader("📋 조편성 및 선수 명단 관리")
+        
         groups_to_delete = []
         for group_name, info in list(st.session_state.groups.items()):
             with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
