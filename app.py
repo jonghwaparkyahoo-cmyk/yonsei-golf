@@ -22,7 +22,7 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (JSON 통째 인증 방식) ---
+# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (PEM 키 줄바꿈 완벽 보정 적용) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
@@ -33,10 +33,12 @@ def load_scores_from_gsheet():
             "https://www.googleapis.com/auth/drive"
         ]
         spreadsheet_url = st.secrets["spreadsheet_url"]
-        
-        # Secrets에 담긴 JSON 문자열을 딕셔너리로 파싱하여 인증 수행 (PEM 에러 완벽 방지)
         json_str = st.secrets["service_account_json"]
         creds_dict = json.loads(json_str)
+        
+        # 🔑 핵심 보정: private_key 내부의 문자열 \n을 실제 줄바꿈으로 변환
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -77,6 +79,10 @@ def save_scores_to_gsheet(scores_dict):
         spreadsheet_url = st.secrets["spreadsheet_url"]
         json_str = st.secrets["service_account_json"]
         creds_dict = json.loads(json_str)
+        
+        # 🔑 핵심 보정: private_key 내부의 문자열 \n을 실제 줄바꿈으로 변환
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
         creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
