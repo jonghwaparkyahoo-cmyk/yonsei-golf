@@ -5,7 +5,7 @@ from streamlit_gsheets import GSheetsConnection
 import gspread
 from google.oauth2.service_account import Credentials
 
-st.set_page_config(page_title="연세대 골프 대회 스코어보드", layout="centered", page_icon="⛳")
+st.set_page_config(page_title="연세대 골프 대회 모바일 스코어보드", layout="centered", page_icon="⛳")
 
 # 15초마다 자동 새로고침 (모든 기기에서 실시간 동기화 유지)
 st_autorefresh(interval=15000, key="datarefresh")
@@ -42,17 +42,20 @@ try:
 except Exception as e:
     pass
 
-# 구글 시트에 점수를 안전하게 저장하는 함수 (gspread 활용)
+# 구글 시트에 점수를 안전하게 저장하는 함수 (gspread 활용 + 에러 디버깅 강화)
 def save_scores_to_gsheet(scores_dict):
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        creds_dict = dict(st.secrets["connections.gsheets"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        # Secrets에서 spreadsheet URL을 분리하고 남은 딕셔너리를 인증용으로 사용
+        secret_dict = dict(st.secrets["connections.gsheets"])
+        spreadsheet_url = secret_dict.pop("spreadsheet", None)
+        
+        creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
         client = gspread.authorize(creds)
-        spreadsheet_url = st.secrets["connections.gsheets"]["spreadsheet"]
+        
         sheet = client.open_by_url(spreadsheet_url)
         
         try:
@@ -71,7 +74,7 @@ def save_scores_to_gsheet(scores_dict):
             worksheet.append_rows(rows)
         return True
     except Exception as e:
-        st.warning(f"구글 시트 저장 중 오류 발생 (Secrets 설정 확인 필요): {e}")
+        st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
 # --- 3. 조편성 데이터 ---
@@ -132,7 +135,7 @@ if 'groups' not in st.session_state:
         "5A조": {
             "start_hole": 5,
             "players": {
-                "이동휘": {"hcap": "NA", "dept": "금속"},
+                "이동휘": {"hcap": 11.0, "dept": "금속"}, # 예시 보정
                 "양성흠": {"hcap": "NA", "dept": "-"},
                 "신재원": {"hcap": "NA", "dept": "전자"},
                 "송창걸": {"hcap": 14.0, "dept": "기계"}
@@ -162,13 +165,12 @@ if menu == "📝 스코어 입력":
     
     group_list = list(st.session_state.groups.keys())
     
-    # 세션에 이전 선택 조가 기억되어 있도록 처리
     if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
         st.session_state.selected_group = group_list[0]
         
     default_idx = group_list.index(st.session_state.selected_group)
     group_name = st.selectbox("조 선택", group_list, index=default_idx)
-    st.session_state.selected_group = group_name  # 선택한 조 기억
+    st.session_state.selected_group = group_name
     
     group_info = st.session_state.groups[group_name]
     start_hole = group_info["start_hole"]
@@ -234,11 +236,13 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트에 실시간 반영
-            save_scores_to_gsheet(st.session_state.scores)
+            # 구글 시트에 저장 시도 (실패 시 상세 에러 표출)
+            success = save_scores_to_gsheet(st.session_state.scores)
+            
+            if success:
+                st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
             
             st.session_state[hole_idx_key] = (current_idx + 1) % 18
-            st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
             st.rerun()
 
     # 최근 입력 홀 기록 테이블
@@ -333,7 +337,7 @@ elif menu == "🏆 실시간 리더보드":
         st.info("아직 등록된 성적이 없습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (테스트 데이터 초기화 버튼 추가)
+# [메뉴 3] 운영진 관리 (2단계 확인 초기화 버튼 적용)
 # ==========================================
 elif menu == "⚙️ 운영진 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
@@ -358,14 +362,19 @@ elif menu == "⚙️ 운영진 관리":
             
         st.markdown("---")
         
-        # --- 테스트 데이터 일괄 초기화 기능 ---
+        # --- 2단계 확인 장치가 적용된 초기화 버튼 ---
         st.subheader("🚨 경기 전 데이터 초기화")
-        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 일괄 삭제하려면 아래 버튼을 누르세요.")
-        if st.button("🗑️ 모든 스코어 기록 초기화 (데이터 리셋)"):
-            st.session_state.scores = {}
-            save_scores_to_gsheet(st.session_state.scores)
-            st.success("모든 스코어 기록이 초기화되었습니다!")
-            st.rerun()
+        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 일괄 삭제합니다.")
+        
+        confirm_reset = st.checkbox("⚠️ 모든 스코어 기록을 삭제하는 것에 동의합니다 (초기화 활성화)")
+        if confirm_reset:
+            if st.button("🗑️ 모든 스코어 기록 초기화 실행"):
+                st.session_state.scores = {}
+                save_scores_to_gsheet(st.session_state.scores)
+                st.success("모든 스코어 기록이 초기화되었습니다!")
+                st.rerun()
+        else:
+            st.button("🗑️ 모든 스코어 기록 초기화 실행", disabled=True)
             
         st.markdown("---")
         st.subheader("📋 조편성 및 선수 명단 관리")
