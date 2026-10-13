@@ -21,7 +21,7 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (gspread 직접 활용) ---
+# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (gspread 직접 활용 + PEM 키 포맷 완벽 보정) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
@@ -31,9 +31,12 @@ def load_scores_from_gsheet():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        # st.secrets에서 직접 인증 정보 읽기
         secret_dict = dict(st.secrets)
         spreadsheet_url = secret_dict.pop("spreadsheet_url", None)
+        
+        # Secrets의 \n 문자열을 실제 줄바꿈으로 변환하여 PEM 에러 원천 차단
+        if "private_key" in secret_dict:
+            secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
         
         creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -73,6 +76,9 @@ def save_scores_to_gsheet(scores_dict):
         ]
         secret_dict = dict(st.secrets)
         spreadsheet_url = secret_dict.pop("spreadsheet_url", None)
+        
+        if "private_key" in secret_dict:
+            secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
         
         creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
         client = gspread.authorize(creds)
@@ -256,7 +262,6 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트에 저장 시도
             success = save_scores_to_gsheet(st.session_state.scores)
             
             if success:
