@@ -5,17 +5,19 @@ import gspread
 import json
 from google.oauth2.service_account import Credentials
 
-# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (주석 처리됨) ---
-# st.write("### 🔍 디버깅 모드")
-# try:
-#     raw_key = st.secrets["gcp_json"]
-#     st.write(f"Key 시작 부분: `{raw_key[:50]}`")
-#     st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
-#     st.write(f"문자열 길이: {len(raw_key)}")
-#     st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
-# except Exception as e:
-#     st.error(f"Secrets 자체를 읽지 못함: {e}")
-# st.markdown("---")
+"""
+# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (현재 숨김 처리됨) ---
+st.write("### 🔍 디버깅 모드")
+try:
+    raw_key = st.secrets["gcp_json"]
+    st.write(f"Key 시작 부분: `{raw_key[:50]}`")
+    st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
+    st.write(f"문자열 길이: {len(raw_key)}")
+    st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
+except Exception as e:
+    st.error(f"Secrets 자체를 읽지 못함: {e}")
+st.markdown("---")
+"""
 
 st.set_page_config(
     page_title="연세대 골프 대회 모바일 스코어보드", 
@@ -258,7 +260,8 @@ if menu == "📝 스코어 입력":
             
     st.markdown("---")
 
-    with st.form(key=f"unified_score_form_{group_name}_{current_idx}"):
+    # 🚨 저장 시 이전 잔여 입력을 깔끔하게 지우기 위해 clear_on_submit=True 추가
+    with st.form(key=f"unified_score_form_{group_name}_{current_idx}", clear_on_submit=True):
         st.markdown(f"#### 🏌️‍♂️ Hole {current_course_hole}, Par {current_par}")
         
         form_inputs = {}
@@ -296,6 +299,12 @@ if menu == "📝 스코어 입력":
             
             if success:
                 st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
+                
+                # 다음 홀로 넘어가기 전 남아있는 위젯 입력값(이전 점수)을 메모리에서 강제로 삭제하여 리셋 보장
+                keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
+                for k in keys_to_delete:
+                    del st.session_state[k]
+                    
                 st.session_state[hole_idx_key] = (current_idx + 1) % 18
                 st.rerun()
 
