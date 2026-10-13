@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 import gspread
+import json
 from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="연세대 골프 대회 모바일 스코어보드", layout="centered", page_icon="⛳")
@@ -21,7 +22,7 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (gspread 직접 활용 + PEM 키 포맷 완벽 보정) ---
+# --- 2. 구글 시트 연결 및 실시간 데이터 로드 (JSON 통째 인증 방식) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
@@ -31,14 +32,13 @@ def load_scores_from_gsheet():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        secret_dict = dict(st.secrets)
-        spreadsheet_url = secret_dict.pop("spreadsheet_url", None)
+        spreadsheet_url = st.secrets["spreadsheet_url"]
         
-        # Secrets의 \n 문자열을 실제 줄바꿈으로 변환하여 PEM 에러 원천 차단
-        if "private_key" in secret_dict:
-            secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
+        # Secrets에 담긴 JSON 문자열을 딕셔너리로 파싱하여 인증 수행 (PEM 에러 완벽 방지)
+        json_str = st.secrets["service_account_json"]
+        creds_dict = json.loads(json_str)
         
-        creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open_by_url(spreadsheet_url)
         
@@ -74,13 +74,11 @@ def save_scores_to_gsheet(scores_dict):
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        secret_dict = dict(st.secrets)
-        spreadsheet_url = secret_dict.pop("spreadsheet_url", None)
+        spreadsheet_url = st.secrets["spreadsheet_url"]
+        json_str = st.secrets["service_account_json"]
+        creds_dict = json.loads(json_str)
         
-        if "private_key" in secret_dict:
-            secret_dict["private_key"] = secret_dict["private_key"].replace("\\n", "\n")
-        
-        creds = Credentials.from_service_account_info(secret_dict, scopes=scopes)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         sheet = client.open_by_url(spreadsheet_url)
         
