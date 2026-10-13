@@ -20,29 +20,35 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 구글 시트 공식 연결 (st-gsheets-connection 활용) ---
+# --- 2. 세션 상태 초기화 ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_scores_db = conn.read(worksheet="Scores", ttl=0)
-    
-    if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
-        st.session_state.scores = {}
-        for _, row in df_scores_db.iterrows():
-            p_name = str(row["선수명"])
-            h_num = int(row["홀번호"])
-            diff_val = int(row["점수차"])
-            if p_name not in st.session_state.scores:
-                st.session_state.scores[p_name] = {}
-            st.session_state.scores[p_name][h_num] = diff_val
-except Exception as e:
-    pass
+# 구글 시트에서 데이터 읽어오는 함수 (함수 내에서 conn 안전 생성)
+def load_scores_from_gsheet():
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df_scores_db = conn.read(worksheet="Scores", ttl=0)
+        
+        if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
+            st.session_state.scores = {}
+            for _, row in df_scores_db.iterrows():
+                p_name = str(row["선수명"])
+                h_num = int(row["홀번호"])
+                diff_val = int(row["점수차"])
+                if p_name not in st.session_state.scores:
+                    st.session_state.scores[p_name] = {}
+                st.session_state.scores[p_name][h_num] = diff_val
+    except Exception as e:
+        pass
 
-# 구글 시트에 점수를 안전하게 저장하는 함수
+# 앱 실행 시점 데이터 로드
+load_scores_from_gsheet()
+
+# 구글 시트에 점수를 안전하게 저장하는 함수 (함수 내에서 conn 안전 생성)
 def save_scores_to_gsheet(scores_dict):
     try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
         all_scores_list = []
         for p, holes in scores_dict.items():
             for h, d in holes.items():
@@ -52,7 +58,6 @@ def save_scores_to_gsheet(scores_dict):
         if df_to_save.empty:
             df_to_save = pd.DataFrame(columns=["선수명", "홀번호", "점수차"])
             
-        # 공식 conn.update를 이용해 Scores 탭에 안전하게 기록
         conn.update(worksheet="Scores", data=df_to_save)
         return True
     except Exception as e:
