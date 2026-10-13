@@ -473,4 +473,8 @@ elif menu == "⚙️ 운영진 관리":
             add_g_btn = st.form_submit_button("조 생성하기")
             if add_g_btn and new_g_name:
                 if new_g_name not in st.session_state.groups:
-                    st.session_state.groups[new_g_name] = {"start_hole": int(
+                    st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
+                    st.success(f"'{new_g_name}' 조가 생성되었습니다!")
+                    st.rerun()
+                else:
+                    st.error("이미 존재하는 조 이름입니다.")
