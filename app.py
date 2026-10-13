@@ -17,12 +17,11 @@ from google.oauth2.service_account import Credentials
 #     st.error(f"Secrets 자체를 읽지 못함: {e}")
 # st.markdown("---")
 
-# 📱 메뉴 선택 시 사이드바 자동 닫힘 설정 (initial_sidebar_state="collapsed")
 st.set_page_config(
     page_title="연세대 골프 대회 모바일 스코어보드", 
     layout="centered", 
     page_icon="⛳",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed" # 사이드바 원천 숨김
 )
 
 # 15초마다 자동 새로고침 (모든 기기에서 실시간 동기화 유지)
@@ -34,6 +33,14 @@ st.markdown("""
 .stSelectbox div[data-baseweb="select"] {
     min-height: 35px;
 }
+/* 가로형 메뉴바를 모바일에 맞게 스타일링 */
+div.row-widget.stRadio > div {
+    flex-direction: row;
+    justify-content: space-around;
+    background-color: #f0f2f6;
+    padding: 10px;
+    border-radius: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -44,7 +51,7 @@ PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
-# 🔑 통합 인증 함수 (공백 박멸 보정 및 깐깐한 JSON 검사 해제 포함)
+# 🔑 통합 인증 함수
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -193,10 +200,18 @@ if 'groups' not in st.session_state:
         }
     }
 
-st.title("⛳ 연세대 골프 대회 모바일 스코어보드")
-st.markdown("---")
+st.title("⛳ 연세대 골프 대회")
 
-menu = st.sidebar.radio("메뉴 선택", ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 운영진 관리"])
+# ==========================================
+# [모바일 친화적 상단 메뉴바 구성]
+# ==========================================
+menu = st.radio(
+    "메뉴 이동",
+    ["📝 스코어 입력", "🏆 실시간 리더보드", "⚙️ 관리"],
+    horizontal=True, # 가로로 배치
+    label_visibility="collapsed" # '메뉴 이동' 글씨 숨김
+)
+st.markdown("---")
 
 # ==========================================
 # [메뉴 1] 스코어 입력
@@ -378,7 +393,7 @@ elif menu == "🏆 실시간 리더보드":
 # ==========================================
 # [메뉴 3] 운영진 관리
 # ==========================================
-elif menu == "⚙️ 운영진 관리":
+elif menu == "⚙️ 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
     
     if 'admin_auth' not in st.session_state:
