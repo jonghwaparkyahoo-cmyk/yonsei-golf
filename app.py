@@ -42,7 +42,7 @@ try:
 except Exception as e:
     pass
 
-# 구글 시트에 점수를 안전하게 저장하는 함수 (gspread 활용 + 에러 디버깅 강화)
+# 구글 시트에 점수를 안전하게 저장하는 함수 (gspread 활용)
 def save_scores_to_gsheet(scores_dict):
     try:
         scopes = [
@@ -135,7 +135,7 @@ if 'groups' not in st.session_state:
         "5A조": {
             "start_hole": 5,
             "players": {
-                "이동휘": {"hcap": 11.0, "dept": "금속"}, # 예시 보정
+                "이동휘": {"hcap": "NA", "dept": "금속"},
                 "양성흠": {"hcap": "NA", "dept": "-"},
                 "신재원": {"hcap": "NA", "dept": "전자"},
                 "송창걸": {"hcap": 14.0, "dept": "기계"}
@@ -236,14 +236,16 @@ if menu == "📝 스코어 입력":
             for player, diff in form_inputs.items():
                 st.session_state.scores[player][current_course_hole] = diff
             
-            # 구글 시트에 저장 시도 (실패 시 상세 에러 표출)
+            # 구글 시트에 저장 시도
             success = save_scores_to_gsheet(st.session_state.scores)
             
             if success:
                 st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
-            
-            st.session_state[hole_idx_key] = (current_idx + 1) % 18
-            st.rerun()
+                st.session_state[hole_idx_key] = (current_idx + 1) % 18
+                st.rerun()
+            else:
+                # 실패 시 rerun 하지 않고 에러 메시지가 화면에 남아있게 함
+                st.error("❌ 구글 시트 저장에 실패했습니다. 위의 상세 에러 메시지를 확인해 주세요.")
 
     # 최근 입력 홀 기록 테이블
     st.markdown("---")
