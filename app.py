@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from streamlit_gsheets import GSheetsConnection
+import gspread
+import json
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="연세대 골프 대회 모바일 스코어보드", layout="centered", page_icon="⛳")
 
@@ -20,45 +22,76 @@ st.markdown("""
 # --- 1. 코스 파(Par) 정보 ---
 PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
-# --- 2. 세션 상태 초기화 ---
+# --- 2. 구글 시트 연동 함수 (JSON 파싱 및 PEM 줄바꿈 보정) ---
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
-# 구글 시트에서 데이터 읽어오는 함수 (함수 내에서 conn 안전 생성)
+def get_gspread_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    json_str = st.secrets["gcp_json"]
+    creds_dict = json.loads(json_str)
+    
+    # PEM 개인키의 문자열 \n을 실제 줄바꿈으로 변환 (PEM 에러 완벽 차단)
+    if "private_key" in creds_dict:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
 def load_scores_from_gsheet():
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        df_scores_db = conn.read(worksheet="Scores", ttl=0)
+        client = get_gspread_client()
+        spreadsheet_url = st.secrets["spreadsheet_url"]
+        sheet = client.open_by_url(spreadsheet_url)
         
-        if not df_scores_db.empty and all(col in df_scores_db.columns for col in ["선수명", "홀번호", "점수차"]):
-            st.session_state.scores = {}
-            for _, row in df_scores_db.iterrows():
-                p_name = str(row["선수명"])
-                h_num = int(row["홀번호"])
-                diff_val = int(row["점수차"])
-                if p_name not in st.session_state.scores:
-                    st.session_state.scores[p_name] = {}
-                st.session_state.scores[p_name][h_num] = diff_val
+        try:
+            worksheet = sheet.worksheet("Scores")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
+            worksheet.append_row(["선수명", "홀번호", "점수차"])
+            return
+            
+        data = worksheet.get_all_records()
+        if data:
+            df = pd.DataFrame(data)
+            if not df.empty and all(col in df.columns for col in ["선수명", "홀번호", "점수차"]):
+                st.session_state.scores = {}
+                for _, row in df.iterrows():
+                    p_name = str(row["선수명"])
+                    h_num = int(row["홀번호"])
+                    diff_val = int(row["점수차"])
+                    if p_name not in st.session_state.scores:
+                        st.session_state.scores[p_name] = {}
+                    st.session_state.scores[p_name][h_num] = diff_val
     except Exception as e:
         pass
 
-# 앱 실행 시점 데이터 로드
+# 앱 실행 시 시트 데이터 로드
 load_scores_from_gsheet()
 
-# 구글 시트에 점수를 안전하게 저장하는 함수 (함수 내에서 conn 안전 생성)
 def save_scores_to_gsheet(scores_dict):
     try:
-        conn = st.connection("gsheets", type=GSheetsConnection)
-        all_scores_list = []
+        client = get_gspread_client()
+        spreadsheet_url = st.secrets["spreadsheet_url"]
+        sheet = client.open_by_url(spreadsheet_url)
+        
+        try:
+            worksheet = sheet.worksheet("Scores")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
+            
+        worksheet.clear()
+        worksheet.append_row(["선수명", "홀번호", "점수차"])
+        
+        rows = []
         for p, holes in scores_dict.items():
             for h, d in holes.items():
-                all_scores_list.append({"선수명": p, "홀번호": h, "점수차": d})
-        
-        df_to_save = pd.DataFrame(all_scores_list)
-        if df_to_save.empty:
-            df_to_save = pd.DataFrame(columns=["선수명", "홀번호", "점수차"])
-            
-        conn.update(worksheet="Scores", data=df_to_save)
+                rows.append([p, h, d])
+        if rows:
+            worksheet.append_rows(rows)
         return True
     except Exception as e:
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
