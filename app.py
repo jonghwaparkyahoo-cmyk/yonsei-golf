@@ -38,14 +38,16 @@ PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
-# 🔑 통합 인증 함수 (공백 박멸 보정 포함)
+# 🔑 통합 인증 함수 (공백 박멸 보정 및 깐깐한 JSON 검사 해제 포함)
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
     json_str = st.secrets["gcp_json"]
-    creds_dict = json.loads(json_str)
+    
+    # 🚨 단어 하나 추가: strict=False 를 넣어서 엔터(줄바꿈)가 섞여 있어도 에러 없이 통과시킴
+    creds_dict = json.loads(json_str, strict=False)
     
     if "private_key" in creds_dict:
         clean_key = creds_dict["private_key"].replace("= ", "=\n").replace("\\n", "\n")
