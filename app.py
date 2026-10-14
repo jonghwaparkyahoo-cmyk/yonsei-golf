@@ -89,7 +89,8 @@ def load_scores_from_gsheet():
         st.session_state.scores = {}
         
         if not data:
-            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
+            # 🚨 구글 시트가 비어있으면 현재 보고 있던 위치(current_hole_idx)도 시작 홀로 완전 초기화
+            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_") or k.startswith("current_hole_idx_")]
             for k in keys_to_delete:
                 del st.session_state[k]
         else:
@@ -502,102 +503,4 @@ elif menu == ":material/settings: 관리":
         st.markdown("---")
         
         st.subheader("🚨 경기 전 데이터 초기화")
-        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 구글 시트에서 일괄 삭제합니다.")
-        
-        confirm_reset = st.checkbox("⚠️ 모든 스코어 기록을 삭제하는 것에 동의합니다 (초기화 활성화)")
-        if confirm_reset:
-            if st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행"):
-                try:
-                    client = get_gspread_client()
-                    sheet = client.open_by_url(st.secrets["spreadsheet_url"])
-                    worksheet = sheet.worksheet("Scores")
-                    worksheet.clear()
-                    worksheet.append_row(["선수명", "홀번호", "점수차"])
-                    
-                    st.session_state.scores = {}
-                    
-                    st.success("✅ 모든 스코어 기록이 완벽하게 초기화되었습니다! (새로고침 중...)")
-                    time.sleep(2.0)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"초기화 중 오류 발생: {e}")
-        else:
-            st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행", disabled=True)
-            
-        st.markdown("---")
-        st.subheader("📋 조편성 및 선수 명단 관리")
-        
-        groups_to_delete = []
-        for group_name, info in list(st.session_state.groups.items()):
-            with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
-                new_start_hole = st.number_input(f"시작 홀 변경 ({group_name})", min_value=1, max_value=18, value=int(info['start_hole']), key=f"sh_{group_name}")
-                st.session_state.groups[group_name]['start_hole'] = new_start_hole
-                
-                st.markdown("**소속 선수 및 핸디캡 수정**")
-                players_to_delete = []
-                for player, p_val in list(info['players'].items()):
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    with col1:
-                        new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
-                    with col2:
-                        h_val_str = str(int(float(p_val['hcap']))) if p_val['hcap'] != "NA" else "NA"
-                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=h_val_str, key=f"phcap_{group_name}_{player}")
-                    with col3:
-                        if st.button("삭제", key=f"del_p_{group_name}_{player}"):
-                            players_to_delete.append(player)
-                            
-                    if new_name != player and new_name not in st.session_state.groups[group_name]['players']:
-                        st.session_state.groups[group_name]['players'][new_name] = st.session_state.groups[group_name]['players'].pop(player)
-                        player = new_name
-                    
-                    try:
-                        if new_hcap.upper() == "NA":
-                            st.session_state.groups[group_name]['players'][player]['hcap'] = "NA"
-                        else:
-                            st.session_state.groups[group_name]['players'][player]['hcap'] = int(float(new_hcap))
-                    except ValueError:
-                        pass
-                        
-                for p in players_to_delete:
-                    del st.session_state.groups[group_name]['players'][p]
-                    st.rerun()
-                    
-                with st.form(key=f"add_player_{group_name}"):
-                    col_ap1, col_ap2, col_ap3, col_ap4 = st.columns([2, 1.5, 1.5, 1])
-                    with col_ap1:
-                        add_name = st.text_input("선수명")
-                    with col_ap2:
-                        add_dept = st.text_input("소속", value="-")
-                    with col_ap3:
-                        add_hcap = st.text_input("핸디캡", value="NA")
-                    with col_ap4:
-                        add_btn = st.form_submit_button("추가")
-                    if add_btn and add_name:
-                        try:
-                            h_val = int(float(add_hcap)) if add_hcap.upper() != "NA" else "NA"
-                        except ValueError:
-                            h_val = "NA"
-                        st.session_state.groups[group_name]['players'][add_name] = {"hcap": h_val, "dept": add_dept}
-                        st.success(f"{add_name} 선수 추가 완료!")
-                        st.rerun()
-                        
-                if st.button(f"🗑️ '{group_name}' 조 전체 삭제", key=f"del_g_{group_name}"):
-                    groups_to_delete.append(group_name)
-                    
-        for g in groups_to_delete:
-            del st.session_state.groups[g]
-            st.rerun()
-            
-        st.markdown("---")
-        st.subheader("➕ 새 조 추가하기")
-        with st.form(key="add_group_form"):
-            new_g_name = st.text_input("새 조 이름 (예: 6A조)")
-            new_g_start = st.number_input("시작 홀", min_value=1, max_value=18, value=1)
-            add_g_btn = st.form_submit_button("조 생성하기")
-            if add_g_btn and new_g_name:
-                if new_g_name not in st.session_state.groups:
-                    st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
-                    st.success(f"'{new_g_name}' 조가 생성되었습니다!")
-                    st.rerun()
-                else:
-                    st.error("이미 존재하는 조 이름입니다.")
+        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 구글 시트
