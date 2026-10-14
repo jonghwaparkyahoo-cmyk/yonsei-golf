@@ -6,7 +6,7 @@ import json
 import time
 from google.oauth2.service_account import Credentials
 
-# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (현재 숨김 처리됨) ---
+# --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 ---
 # st.write("### 🔍 디버깅 모드")
 # try:
 #     raw_key = st.secrets["gcp_json"]
@@ -145,51 +145,51 @@ def save_scores_to_gsheet(new_scores_dict):
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
-# --- 3. 조편성 데이터 ---
+# --- 3. 조편성 데이터 (핸디캡 소수점 제거) ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
             "start_hole": 1,
             "players": {
-                "노재호": {"hcap": 21.0, "dept": "세라믹"},
-                "곽재영": {"hcap": 22.0, "dept": "전자"},
-                "박주원": {"hcap": 15.0, "dept": "전자"}
+                "노재호": {"hcap": 21, "dept": "세라믹"},
+                "곽재영": {"hcap": 22, "dept": "전자"},
+                "박주원": {"hcap": 15, "dept": "전자"}
             }
         },
         "1B조": {
             "start_hole": 1,
             "players": {
-                "이용일": {"hcap": 25.0, "dept": "토목"},
-                "신성원": {"hcap": 14.0, "dept": "전기"},
-                "신현경": {"hcap": 17.0, "dept": "전자"},
-                "이창호": {"hcap": 23.0, "dept": "전기"}
+                "이용일": {"hcap": 25, "dept": "토목"},
+                "신성원": {"hcap": 14, "dept": "전기"},
+                "신현경": {"hcap": 17, "dept": "전자"},
+                "이창호": {"hcap": 23, "dept": "전기"}
             }
         },
         "2조": {
             "start_hole": 2,
             "players": {
-                "마이클 안": {"hcap": 8.0, "dept": "국제학부"},
+                "마이클 안": {"hcap": 8, "dept": "국제학부"},
                 "양진기": {"hcap": "NA", "dept": "전산"},
-                "박종화": {"hcap": 10.0, "dept": "전산"},
-                "김택규": {"hcap": 13.0, "dept": "생화학"}
+                "박종화": {"hcap": 10, "dept": "전산"},
+                "김택규": {"hcap": 13, "dept": "생화학"}
             }
         },
         "3A조": {
             "start_hole": 3,
             "players": {
-                "김은혁": {"hcap": 23.0, "dept": "의학"},
+                "김은혁": {"hcap": 23, "dept": "의학"},
                 "변원석": {"hcap": "NA", "dept": "기계"},
-                "임봉욱": {"hcap": 17.0, "dept": "건축"},
-                "이은홍": {"hcap": 25.0, "dept": "건축"}
+                "임봉욱": {"hcap": 17, "dept": "건축"},
+                "이은홍": {"hcap": 25, "dept": "건축"}
             }
         },
         "3B조": {
             "start_hole": 3,
             "players": {
-                "남명현": {"hcap": 25.0, "dept": "수학"},
-                "박재효": {"hcap": 34.0, "dept": "경제"},
-                "우규진": {"hcap": 18.0, "dept": "전자"},
-                "이미나": {"hcap": 24.0, "dept": "영문"}
+                "남명현": {"hcap": 25, "dept": "수학"},
+                "박재효": {"hcap": 34, "dept": "경제"},
+                "우규진": {"hcap": 18, "dept": "전자"},
+                "이미나": {"hcap": 24, "dept": "영문"}
             }
         },
         "4조": {
@@ -197,7 +197,7 @@ if 'groups' not in st.session_state:
             "players": {
                 "임주연": {"hcap": "NA", "dept": "세라믹"},
                 "황경진": {"hcap": "NA", "dept": "금속"},
-                "김윤경": {"hcap": 36.0, "dept": "-"}
+                "김윤경": {"hcap": 36, "dept": "-"}
             }
         },
         "5A조": {
@@ -206,16 +206,16 @@ if 'groups' not in st.session_state:
                 "이동휘": {"hcap": "NA", "dept": "금속"},
                 "양성흠": {"hcap": "NA", "dept": "-"},
                 "신재원": {"hcap": "NA", "dept": "전자"},
-                "송창걸": {"hcap": 14.0, "dept": "기계"}
+                "송창걸": {"hcap": 14, "dept": "기계"}
             }
         },
         "5B조": {
             "start_hole": 5,
             "players": {
-                "박준식": {"hcap": 11.0, "dept": "사체"},
+                "박준식": {"hcap": 11, "dept": "사체"},
                 "정태양": {"hcap": "NA", "dept": "스포츠레저"},
-                "최성식": {"hcap": 13.0, "dept": "생명공학"},
-                "김용민": {"hcap": 5.0, "dept": "전기"}
+                "최성식": {"hcap": 13, "dept": "생명공학"},
+                "김용민": {"hcap": 5, "dept": "전기"}
             }
         }
     }
@@ -375,7 +375,7 @@ if menu == "📝 스코어 입력":
                 # 저장 완료했으니 다시 스마트 점프 가동!
                 st.session_state.auto_jump = True 
                 
-                # 🚨 성공 메시지를 1.2초간 보여주어 눈으로 확인할 수 있게 함
+                # 저장 성공 메시지를 1.2초간 보여줌
                 time.sleep(1.2)
                 st.rerun()
 
@@ -440,13 +440,15 @@ elif menu == "🏆 실시간 리더보드":
             has_hcap = (hcap != "NA")
             
             if played_count > 0 and has_hcap:
-                net_val = round(gross_total - float(hcap))
+                # 핸디캡을 정수로 계산
+                net_val = round(gross_total - int(float(hcap)))
                 net_score = str(net_val)
             else:
                 net_score = "-"
                 
             if has_hcap:
-                display_hcap = str(int(round(float(hcap))))
+                # 출력 시에도 소수점 제거
+                display_hcap = str(int(float(hcap)))
             else:
                 display_hcap = "NA"
                 
@@ -519,7 +521,9 @@ elif menu == "⚙️ 관리":
                     
                     st.session_state.scores = {}
                     
-                    st.success("모든 스코어 기록이 완벽하게 초기화되었습니다!")
+                    # 🚨 초기화 성공 메시지를 2초간 길게 보여줌
+                    st.success("✅ 모든 스코어 기록이 완벽하게 초기화되었습니다! (새로고침 중...)")
+                    time.sleep(2.0)
                     st.rerun()
                 except Exception as e:
                     st.error(f"초기화 중 오류 발생: {e}")
@@ -542,7 +546,9 @@ elif menu == "⚙️ 관리":
                     with col1:
                         new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
                     with col2:
-                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=str(p_val['hcap']), key=f"phcap_{group_name}_{player}")
+                        # 화면에 보여줄 때 소수점 없이 정수 문자열로 표시
+                        h_val_str = str(int(float(p_val['hcap']))) if p_val['hcap'] != "NA" else "NA"
+                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=h_val_str, key=f"phcap_{group_name}_{player}")
                     with col3:
                         if st.button("삭제", key=f"del_p_{group_name}_{player}"):
                             players_to_delete.append(player)
@@ -554,7 +560,8 @@ elif menu == "⚙️ 관리":
                         if new_hcap.upper() == "NA":
                             st.session_state.groups[group_name]['players'][player]['hcap'] = "NA"
                         else:
-                            st.session_state.groups[group_name]['players'][player]['hcap'] = float(new_hcap)
+                            # 🚨 입력된 값을 정수로 변환하여 소수점 제거 (사용자가 실수로 15.5 입력해도 15로 처리)
+                            st.session_state.groups[group_name]['players'][player]['hcap'] = int(float(new_hcap))
                     except ValueError:
                         pass
                         
@@ -562,39 +569,4 @@ elif menu == "⚙️ 관리":
                     del st.session_state.groups[group_name]['players'][p]
                     st.rerun()
                     
-                with st.form(key=f"add_player_{group_name}"):
-                    col_ap1, col_ap2, col_ap3, col_ap4 = st.columns([2, 1.5, 1.5, 1])
-                    with col_ap1:
-                        add_name = st.text_input("선수명")
-                    with col_ap2:
-                        add_dept = st.text_input("소속", value="-")
-                    with col_ap3:
-                        add_hcap = st.text_input("핸디캡", value="NA")
-                    with col_ap4:
-                        add_btn = st.form_submit_button("추가")
-                    if add_btn and add_name:
-                        h_val = float(add_hcap) if add_hcap.upper()!="NA" else "NA"
-                        st.session_state.groups[group_name]['players'][add_name] = {"hcap": h_val, "dept": add_dept}
-                        st.success(f"{add_name} 선수 추가 완료!")
-                        st.rerun()
-                        
-                if st.button(f"🗑️ '{group_name}' 조 전체 삭제", key=f"del_g_{group_name}"):
-                    groups_to_delete.append(group_name)
-                    
-        for g in groups_to_delete:
-            del st.session_state.groups[g]
-            st.rerun()
-            
-        st.markdown("---")
-        st.subheader("➕ 새 조 추가하기")
-        with st.form(key="add_group_form"):
-            new_g_name = st.text_input("새 조 이름 (예: 6A조)")
-            new_g_start = st.number_input("시작 홀", min_value=1, max_value=18, value=1)
-            add_g_btn = st.form_submit_button("조 생성하기")
-            if add_g_btn and new_g_name:
-                if new_g_name not in st.session_state.groups:
-                    st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
-                    st.success(f"'{new_g_name}' 조가 생성되었습니다!")
-                    st.rerun()
-                else:
-                    st.error("이미 존재하는 조 이름입니다.")
+                with st.form(key=f"add_player_{group_name}")
