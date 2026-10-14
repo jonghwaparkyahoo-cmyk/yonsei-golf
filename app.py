@@ -36,9 +36,8 @@ if 'par_list' not in st.session_state:
 if 'groups' not in st.session_state:
     st.session_state.groups = {"1A조": {"start_hole": 1, "players": {"연동대기중": {"hcap": "NA", "dept": "-"}}}}
 
-# 🔑 구글 인증 함수 (URL 자동 링크 변환 방지 트릭 적용)
+# 🔑 구글 인증 함수 (URL 자동 링크 변환 방지)
 def get_gspread_client():
-    # 텍스트 에디터의 자동 링크 변환을 막기 위해 문자열을 쪼개서 합칩니다.
     scope1 = "https" + "://" + "www.googleapis.com" + "/auth/spreadsheets"
     scope2 = "https" + "://" + "www.googleapis.com" + "/auth/drive"
     scopes = [scope1, scope2]
@@ -359,7 +358,7 @@ if menu == ":material/edit_document: 스코어 입력":
         else: st.caption("아직 기록된 점수가 없습니다.")
 
 # ==========================================
-# [메뉴 2] 실시간 리더보드
+# [메뉴 2] 실시간 리더보드 (Gross/Net 모두 점수차 기반 합산으로 변경)
 # ==========================================
 elif menu == ":material/leaderboard: 실시간 리더보드":
     col_lb_title, col_lb_refresh = st.columns([2, 1])
@@ -382,14 +381,16 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
             p_scores = st.session_state.scores.get(player, {})
             played_count = len(p_scores)
             
-            gross_total = 0
+            # 🚨 Gross: 점수차(diff)들의 단순 합산으로 변경
+            gross_diff_total = 0
             for h, diff in p_scores.items():
-                gross_total += (st.session_state.par_list[h-1] + diff)
+                gross_diff_total += diff
                 
             has_hcap = (hcap != "NA")
             
             if played_count > 0 and has_hcap:
-                net_val = round(gross_total - int(float(hcap)))
+                # 🚨 Net: Gross(점수차 합산)에서 핸디캡을 뺀 값
+                net_val = round(gross_diff_total - int(float(hcap)))
                 net_score = str(net_val)
             else: net_score = "-"
                 
@@ -397,9 +398,15 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
             elif played_count >= 18: current_pos = "F"
             else: current_pos = str(hole_sequence[played_count - 1])
                 
+            # Gross 점수차 표시 문자열 가공 (+기호 등)
+            if played_count > 0:
+                gross_str = f"+{gross_diff_total}" if gross_diff_total > 0 else (str(gross_diff_total) if gross_diff_total < 0 else "E")
+            else:
+                gross_str = "-"
+                
             leaderboard_data.append({
                 "선수명": player, "핸디캡": str(int(float(hcap))) if has_hcap else "NA",
-                "Gross": str(gross_total) if played_count > 0 else "-", "Net": net_score,
+                "Gross": gross_str, "Net": net_score,
                 "시작홀": str(start_hole), "현재위치": current_pos,
                 "Sort_HasHcap": 0 if has_hcap else 1, "Sort_Net": float(net_score) if net_score != "-" else 999
             })
