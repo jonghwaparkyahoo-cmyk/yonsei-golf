@@ -334,6 +334,7 @@ if menu == ":material/edit_document: 스코어 입력":
                     st.session_state.auto_jump = True 
                     time.sleep(1.2); st.rerun()
 
+        # 🚨 최근 성적 요약 (TOT 컬럼 및 색상 강조 추가)
         st.markdown("---")
         st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
         start_history_idx = max(0, current_idx - 4)
@@ -343,6 +344,15 @@ if menu == ":material/edit_document: 스코어 입력":
         for player in players_info.keys():
             row_data = {"선수명": player}
             p_scores = st.session_state.scores.get(player, {})
+            
+            # --- 누적 점수차(TOT) 계산 ---
+            tot_diff = sum(p_scores.values())
+            if len(p_scores) > 0:
+                tot_str = f"+{tot_diff}" if tot_diff > 0 else (str(tot_diff) if tot_diff < 0 else "E")
+            else:
+                tot_str = "-"
+                
+            # 최근 홀 기록
             for idx in history_indices:
                 h_num = hole_sequence[idx]
                 h_str = f"{h_num}H"
@@ -350,15 +360,29 @@ if menu == ":material/edit_document: 스코어 입력":
                     diff = p_scores[h_num]
                     row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
                 else: row_data[h_str] = "-"
+                
+            # 마지막 열에 TOT 추가
+            row_data["TOT"] = tot_str
             history_table_rows.append(row_data)
             
         if history_table_rows:
             df_history = pd.DataFrame(history_table_rows)
-            st.dataframe(df_history, use_container_width=True, hide_index=True)
+            # 컬럼 순서 고정 (선수명 -> N번 홀들 -> TOT)
+            cols = ["선수명"] + [f"{hole_sequence[idx]}H" for idx in history_indices] + ["TOT"]
+            df_history = df_history[cols]
+            
+            # TOT 컬럼 색상 하이라이팅 적용
+            def highlight_tot(col):
+                if col.name == 'TOT':
+                    return ['background-color: #fff3cd; color: #856404; font-weight: bold;'] * len(col)
+                return [''] * len(col)
+                
+            styled_df = df_history.style.apply(highlight_tot, axis=0)
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
         else: st.caption("아직 기록된 점수가 없습니다.")
 
 # ==========================================
-# [메뉴 2] 실시간 리더보드 (Gross/Net 모두 점수차 기반 합산으로 변경)
+# [메뉴 2] 실시간 리더보드
 # ==========================================
 elif menu == ":material/leaderboard: 실시간 리더보드":
     col_lb_title, col_lb_refresh = st.columns([2, 1])
@@ -381,7 +405,6 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
             p_scores = st.session_state.scores.get(player, {})
             played_count = len(p_scores)
             
-            # 🚨 Gross: 점수차(diff)들의 단순 합산으로 변경
             gross_diff_total = 0
             for h, diff in p_scores.items():
                 gross_diff_total += diff
@@ -389,7 +412,6 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
             has_hcap = (hcap != "NA")
             
             if played_count > 0 and has_hcap:
-                # 🚨 Net: Gross(점수차 합산)에서 핸디캡을 뺀 값
                 net_val = round(gross_diff_total - int(float(hcap)))
                 net_score = str(net_val)
             else: net_score = "-"
@@ -398,7 +420,6 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
             elif played_count >= 18: current_pos = "F"
             else: current_pos = str(hole_sequence[played_count - 1])
                 
-            # Gross 점수차 표시 문자열 가공 (+기호 등)
             if played_count > 0:
                 gross_str = f"+{gross_diff_total}" if gross_diff_total > 0 else (str(gross_diff_total) if gross_diff_total < 0 else "E")
             else:
