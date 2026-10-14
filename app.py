@@ -36,9 +36,13 @@ if 'par_list' not in st.session_state:
 if 'groups' not in st.session_state:
     st.session_state.groups = {"1A조": {"start_hole": 1, "players": {"연동대기중": {"hcap": "NA", "dept": "-"}}}}
 
-# 🔑 구글 인증 함수
+# 🔑 구글 인증 함수 (URL 자동 링크 변환 방지 트릭 적용)
 def get_gspread_client():
-    scopes = ["[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)", "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"]
+    # 텍스트 에디터의 자동 링크 변환을 막기 위해 문자열을 쪼개서 합칩니다.
+    scope1 = "https" + "://" + "www.googleapis.com" + "/auth/spreadsheets"
+    scope2 = "https" + "://" + "www.googleapis.com" + "/auth/drive"
+    scopes = [scope1, scope2]
+    
     creds_dict = json.loads(st.secrets["gcp_json"], strict=False)
     if "private_key" in creds_dict:
         creds_dict["private_key"] = creds_dict["private_key"].replace("= ", "=\n").replace("\\n", "\n")
@@ -57,12 +61,11 @@ def get_target_url():
     except: pass
     return st.secrets["spreadsheet_url"]
 
-# 🧠 샷건 여부 및 파(Par) 정보 스마트 스캔 로직 (업그레이드됨!)
+# 🧠 샷건 여부 및 파(Par) 정보 스마트 스캔 로직
 def parse_tournament_settings(sheet):
     is_shotgun = False
     par_list = [4]*18
     
-    # 1. 샷건 여부 확인 (주로 '대회방식' 탭)
     try:
         ws_mode = sheet.worksheet("대회방식")
         for row in ws_mode.get_all_values():
@@ -70,21 +73,18 @@ def parse_tournament_settings(sheet):
                 if "샷건" in str(cell): is_shotgun = True
     except: pass
         
-    # 2. 파(Par) 정보 스마트 스캔 (여러 시트 탭을 순회하며 파(Par) 숫자 18개를 추적)
     found_par = False
     for ws_name in ["스코어카드", "대회방식", "Scores"]:
         try:
             ws = sheet.worksheet(ws_name)
             vals = ws.get_all_values()
             
-            # 가로 스캔
             for row in vals:
                 nums = [int(x) for x in row if str(x).strip().isdigit() and 3 <= int(x) <= 6]
                 if len(nums) >= 18 and 60 <= sum(nums[:18]) <= 80:
                     par_list = nums[:18]; found_par = True; break
             if found_par: break
             
-            # 세로 스캔 (가로에 없을 경우)
             if len(vals) > 0:
                 for col_idx in range(len(vals[0])):
                     nums = []
@@ -99,7 +99,7 @@ def parse_tournament_settings(sheet):
         
     return is_shotgun, par_list
 
-# 🧑‍🤝‍🧑 조편성 시트 파싱 (병합셀 완벽 처리 및 샷건 시작홀 추출)
+# 🧑‍🤝‍🧑 조편성 시트 파싱
 def parse_groupings(sheet, is_shotgun):
     try:
         ws = sheet.worksheet("조편성")
@@ -109,7 +109,6 @@ def parse_groupings(sheet, is_shotgun):
         df = pd.DataFrame(data)
         df.columns = df.columns.str.strip()
         
-        # 병합셀 처리 (위의 값을 끌어내려 채움)
         if "조" in df.columns:
             df["조"] = df["조"].replace('', pd.NA).ffill()
             
@@ -119,7 +118,6 @@ def parse_groupings(sheet, is_shotgun):
             p_name = str(row.get("이름", "")).strip()
             if not g_name or not p_name or g_name.lower() == "nan" or p_name.lower() == "nan": continue
                 
-            # 샷건일 경우 조 이름에서 첫 번째 연속된 숫자를 찾아 시작홀로 지정
             s_hole = 1
             if is_shotgun:
                 match = re.search(r'\d+', g_name)
@@ -139,7 +137,7 @@ def parse_groupings(sheet, is_shotgun):
         return new_groups
     except: return None
 
-# ⚙️ 대회 설정 정보(조편성/파) 캐싱 (10분간 유지하여 API 할당량 절약)
+# ⚙️ 대회 설정 정보 캐싱
 @st.cache_data(ttl=600)
 def get_tournament_config(target_url):
     try:
@@ -154,12 +152,10 @@ def get_tournament_config(target_url):
 def load_tournament_state():
     target_url = get_target_url()
     
-    # 1. 설정 및 조편성 (캐시 활용)
     par_list, groups = get_tournament_config(target_url)
     if par_list: st.session_state.par_list = par_list
     if groups: st.session_state.groups = groups
         
-    # 2. 실시간 스코어 로드 (매 15초)
     try:
         client = get_gspread_client()
         sheet = client.open_by_url(target_url)
@@ -418,7 +414,7 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
         st.info("아직 등록된 성적이 없거나 조편성이 동기화되지 않았습니다.")
 
 # ==========================================
-# [메뉴 3] 운영진 관리 (초심플 다이어트 완료)
+# [메뉴 3] 운영진 관리
 # ==========================================
 elif menu == ":material/settings: 관리":
     st.header("⚙️ 운영진 전용 관리 패널")
