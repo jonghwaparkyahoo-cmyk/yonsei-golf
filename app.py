@@ -416,9 +416,11 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
                 net_score = str(net_val)
             else: net_score = "-"
                 
-            if played_count == 0: current_pos = "0"
-            elif played_count >= 18: current_pos = "F"
-            else: current_pos = str(hole_sequence[played_count - 1])
+            # 🚨 현재 위치를 진행할 다음 홀로 직관적으로 변경
+            if played_count >= 18:
+                current_pos = "F"
+            else:
+                current_pos = str(hole_sequence[played_count])
                 
             if played_count > 0:
                 gross_str = f"+{gross_diff_total}" if gross_diff_total > 0 else (str(gross_diff_total) if gross_diff_total < 0 else "E")
