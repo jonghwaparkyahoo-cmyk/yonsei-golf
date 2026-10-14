@@ -86,16 +86,13 @@ def load_scores_from_gsheet():
             
         data = worksheet.get_all_records()
         
-        # 🚨 [핵심 수정] 무조건 최신 상태 유지를 위해 로컬 변수를 먼저 싹 비워줍니다.
         st.session_state.scores = {}
         
         if not data:
-            # 구글 시트가 텅 비었다면 (초기화 직후) 화면 입력칸 메모리(input_)도 강제 삭제
             keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
             for k in keys_to_delete:
                 del st.session_state[k]
         else:
-            # 데이터가 있으면 정상적으로 다시 덮어쓰기
             df = pd.DataFrame(data)
             if not df.empty and all(col in df.columns for col in ["선수명", "홀번호", "점수차"]):
                 for _, row in df.iterrows():
@@ -155,7 +152,7 @@ def save_scores_to_gsheet(new_scores_dict):
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
-# --- 3. 조편성 데이터 (핸디캡 소수점 제거) ---
+# --- 3. 조편성 데이터 ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -256,7 +253,6 @@ if menu == ":material/edit_document: 스코어 입력":
     with col_title:
         st.header("📝 스코어 입력")
     with col_refresh:
-        # 데이터 갱신 시 자동 점프 기능 켜기
         if st.button("🔄 데이터 갱신"):
             load_scores_from_gsheet()
             st.session_state.auto_jump = True
@@ -266,7 +262,6 @@ if menu == ":material/edit_document: 스코어 입력":
     default_idx = group_list.index(st.session_state.selected_group)
     group_name = st.selectbox("조 선택", group_list, index=default_idx)
     
-    # 조를 변경하면 자동 점프 활성화 후 새로고침
     if st.session_state.selected_group != group_name:
         st.session_state.selected_group = group_name
         st.session_state.auto_jump = True
@@ -282,7 +277,6 @@ if menu == ":material/edit_document: 스코어 입력":
     
     hole_idx_key = f"current_hole_idx_{group_name}"
     
-    # 🚨 [스마트 점프 1] 최초 진입 시 초기화
     if hole_idx_key not in st.session_state:
         st.session_state[hole_idx_key] = 0
         st.session_state.auto_jump = True
@@ -290,7 +284,6 @@ if menu == ":material/edit_document: 스코어 입력":
     current_idx = st.session_state[hole_idx_key]
     current_course_hole = hole_sequence[current_idx]
     
-    # 🚨 [스마트 점프 2] 15초 자동갱신 등으로 DB 변경 시, 현재 보고있는 홀이 이미 다 채워졌다면 자동으로 다음 빈 홀 찾기
     if st.session_state.auto_jump:
         is_current_completed = True
         for p in players_info.keys():
@@ -310,7 +303,7 @@ if menu == ":material/edit_document: 스코어 입력":
                     auto_idx = idx
                     break
             else:
-                auto_idx = 17 # 전부 입력 완료 시 마지막 홀 주차
+                auto_idx = 17 
                 
             if current_idx != auto_idx:
                 st.session_state[hole_idx_key] = auto_idx
@@ -321,7 +314,6 @@ if menu == ":material/edit_document: 스코어 입력":
     
     col_prev, col_info, col_next = st.columns([1, 2, 1])
     with col_prev:
-        # 수동으로 이전 버튼을 누르면 스마트 점프 일시 정지 (수정 방해 금지)
         if st.button("◀ 이전 홀") and current_idx > 0:
             st.session_state.auto_jump = False 
             st.session_state[hole_idx_key] = current_idx - 1
@@ -381,15 +373,10 @@ if menu == ":material/edit_document: 스코어 입력":
                     del st.session_state[k]
                     
                 st.session_state[hole_idx_key] = (current_idx + 1) % 18
-                
-                # 저장 완료했으니 다시 스마트 점프 가동!
                 st.session_state.auto_jump = True 
-                
-                # 저장 성공 메시지를 1.2초간 보여줌
                 time.sleep(1.2)
                 st.rerun()
 
-    # 조별 입력 현황 확인 테이블
     st.markdown("---")
     st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
     
@@ -429,146 +416,4 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
     with col_lb_refresh:
         if st.button("🔄 새로고침"):
             load_scores_from_gsheet()
-            st.toast("✅ 순위표가 업데이트되었습니다!")
-            
-    st.caption("🔄 구글 시트와 연동되어 실시간으로 15초마다 자동 갱신됩니다.")
-    
-    leaderboard_data = []
-    for group_name, info in st.session_state.groups.items():
-        start_hole = info["start_hole"]
-        hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
-        
-        for player, p_data in info["players"].items():
-            hcap = p_data["hcap"]
-            p_scores = st.session_state.scores.get(player, {})
-            played_count = len(p_scores)
-            
-            gross_total = 0
-            for h, diff in p_scores.items():
-                gross_total += (PAR_LIST[h-1] + diff)
-                
-            has_hcap = (hcap != "NA")
-            
-            if played_count > 0 and has_hcap:
-                # 핸디캡을 정수로 계산
-                net_val = round(gross_total - int(float(hcap)))
-                net_score = str(net_val)
-            else:
-                net_score = "-"
-                
-            if has_hcap:
-                # 출력 시에도 소수점 제거
-                display_hcap = str(int(float(hcap)))
-            else:
-                display_hcap = "NA"
-                
-            if played_count == 0:
-                current_pos = "0"
-            elif played_count >= 18:
-                current_pos = "F"
-            else:
-                last_played_idx = played_count - 1
-                current_pos = str(hole_sequence[last_played_idx])
-                
-            leaderboard_data.append({
-                "선수명": player,
-                "핸디캡": display_hcap,
-                "Gross": str(gross_total) if played_count > 0 else "-",
-                "Net": net_score,
-                "시작홀": str(start_hole),
-                "현재위치": current_pos,
-                "Sort_HasHcap": 0 if has_hcap else 1,
-                "Sort_Net": float(net_score) if net_score != "-" else 999
-            })
-            
-    df_lb = pd.DataFrame(leaderboard_data)
-    if not df_lb.empty:
-        df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
-        df_display = df_lb[["선수명", "핸디캡", "Gross", "Net", "시작홀", "현재위치"]].reset_index(drop=True)
-        df_display.index += 1
-        st.dataframe(df_display, use_container_width=True)
-    else:
-        st.info("아직 등록된 성적이 없습니다.")
-
-# ==========================================
-# [메뉴 3] 운영진 관리
-# ==========================================
-elif menu == ":material/settings: 관리":
-    st.header("⚙️ 운영진 전용 관리 패널")
-    
-    if 'admin_auth' not in st.session_state:
-        st.session_state.admin_auth = False
-        
-    CORRECT_PASSWORD = "yonsei2026"
-    
-    if not st.session_state.admin_auth:
-        admin_password = st.text_input("운영진 비밀번호를 입력하세요", type="password")
-        if admin_password == CORRECT_PASSWORD:
-            st.session_state.admin_auth = True
-            st.rerun()
-        elif admin_password != "":
-            st.error("비밀번호가 틀렸습니다.")
-    else:
-        st.success("인증되었습니다. 당일 조편성 및 스코어 데이터를 관리할 수 있습니다.")
-        if st.button("🔒 로그아웃 (잠금)"):
-            st.session_state.admin_auth = False
-            st.rerun()
-            
-        st.markdown("---")
-        
-        st.subheader("🚨 경기 전 데이터 초기화")
-        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 구글 시트에서 일괄 삭제합니다.")
-        
-        confirm_reset = st.checkbox("⚠️ 모든 스코어 기록을 삭제하는 것에 동의합니다 (초기화 활성화)")
-        if confirm_reset:
-            if st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행"):
-                try:
-                    client = get_gspread_client()
-                    sheet = client.open_by_url(st.secrets["spreadsheet_url"])
-                    worksheet = sheet.worksheet("Scores")
-                    worksheet.clear()
-                    worksheet.append_row(["선수명", "홀번호", "점수차"])
-                    
-                    # 내 폰부터 즉시 로컬 데이터 싹 비우기
-                    st.session_state.scores = {}
-                    
-                    # 🚨 2초 지연 후 리로드! 다른 접속자 폰들은 15초 내에 load_scores_from_gsheet 실행되면서 알아서 빈 화면으로 동기화됨
-                    st.success("✅ 모든 스코어 기록이 완벽하게 초기화되었습니다! (새로고침 중...)")
-                    time.sleep(2.0)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"초기화 중 오류 발생: {e}")
-        else:
-            st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행", disabled=True)
-            
-        st.markdown("---")
-        st.subheader("📋 조편성 및 선수 명단 관리")
-        
-        groups_to_delete = []
-        for group_name, info in list(st.session_state.groups.items()):
-            with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
-                new_start_hole = st.number_input(f"시작 홀 변경 ({group_name})", min_value=1, max_value=18, value=int(info['start_hole']), key=f"sh_{group_name}")
-                st.session_state.groups[group_name]['start_hole'] = new_start_hole
-                
-                st.markdown("**소속 선수 및 핸디캡 수정**")
-                players_to_delete = []
-                for player, p_val in list(info['players'].items()):
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    with col1:
-                        new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
-                    with col2:
-                        h_val_str = str(int(float(p_val['hcap']))) if p_val['hcap'] != "NA" else "NA"
-                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=h_val_str, key=f"phcap_{group_name}_{player}")
-                    with col3:
-                        if st.button("삭제", key=f"del_p_{group_name}_{player}"):
-                            players_to_delete.append(player)
-                            
-                    if new_name != player and new_name not in st.session_state.groups[group_name]['players']:
-                        st.session_state.groups[group_name]['players'][new_name] = st.session_state.groups[group_name]['players'].pop(player)
-                        player = new_name
-                    try:
-                        if new_hcap.upper() == "NA":
-                            st.session_state.groups[group_name]['players'][player]['hcap'] = "NA"
-                        else:
-                            st.session_state.groups[group_name]['players'][player]['hcap'] = int(float(new_hcap))
-                    except ValueError:
+            st.toast("✅ 순위표가
