@@ -50,7 +50,6 @@ PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
 
-# 스마트 점프 기능(자동으로 빈 홀 찾기) 활성화 여부 변수
 if 'auto_jump' not in st.session_state:
     st.session_state.auto_jump = True
 
@@ -70,26 +69,28 @@ def get_gspread_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-def load_scores_from_gsheet():
+# 🚨 메인 시트에서 [점수]와 [조편성]을 한 번에 모두 가져오도록 업그레이드!
+def load_all_data_from_gsheet():
     try:
         client = get_gspread_client()
         spreadsheet_url = st.secrets["spreadsheet_url"]
         sheet = client.open_by_url(spreadsheet_url)
         
+        # --- 1. 스코어 로드 ---
         try:
             worksheet = sheet.worksheet("Scores")
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
             worksheet.append_row(["선수명", "홀번호", "점수차"])
-            st.session_state.scores = {}
-            return
             
         data = worksheet.get_all_records()
-        
-        # 항상 구글 시트 기준으로 화면 데이터를 동기화 (초기화되어 빈 시트면 빈 딕셔너리가 들어감)
         st.session_state.scores = {}
         
-        if data:
+        if not data:
+            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_") or k.startswith("current_hole_idx_")]
+            for k in keys_to_delete:
+                del st.session_state[k]
+        else:
             df = pd.DataFrame(data)
             if not df.empty and all(col in df.columns for col in ["선수명", "홀번호", "점수차"]):
                 for _, row in df.iterrows():
@@ -99,13 +100,121 @@ def load_scores_from_gsheet():
                     if p_name not in st.session_state.scores:
                         st.session_state.scores[p_name] = {}
                     st.session_state.scores[p_name][h_num] = diff_val
+                    
+        # --- 2. 조편성(Groups) 동기화 로드 ---
+        try:
+            g_worksheet = sheet.worksheet("Groups")
+            g_data = g_worksheet.get_all_records()
+            if g_data:
+                df_g = pd.DataFrame(g_data)
+                new_groups = {}
+                for _, row in df_g.iterrows():
+                    g_name = str(row.get("조이름", "")).strip()
+                    p_name = str(row.get("선수명", "")).strip()
+                    if not g_name or not p_name: continue
+                    
+                    s_hole = str(row.get("시작홀", "1")).strip()
+                    s_hole = int(s_hole) if s_hole.isdigit() else 1
+                    dept = str(row.get("소속", "")).strip()
+                    hcap = row.get("핸디캡", "NA")
+                    
+                    if pd.isna(hcap) or str(hcap).strip().upper() == "NA" or str(hcap).strip() == "":
+                        hcap_val = "NA"
+                    else:
+                        try: hcap_val = int(float(hcap))
+                        except: hcap_val = "NA"
+                        
+                    if g_name not in new_groups:
+                        new_groups[g_name] = {"start_hole": s_hole, "players": {}}
+                    new_groups[g_name]["players"][p_name] = {"hcap": hcap_val, "dept": dept}
+                    
+                if new_groups:
+                    st.session_state.groups = new_groups
+        except gspread.exceptions.WorksheetNotFound:
+            pass # 아직 'Groups' 시트가 생성되지 않았다면 하드코딩된 기본값 사용
+
     except Exception as e:
         pass
 
-# 앱 실행 시점 최신 데이터 로드
-load_scores_from_gsheet()
+# --- 외부 URL 시트에서 조편성 읽어오기 및 저장 함수 ---
+def import_groups_from_url(url):
+    try:
+        client = get_gspread_client()
+        source_sheet = client.open_by_url(url)
+        source_ws = source_sheet.sheet1
+        data = source_ws.get_all_records()
+        
+        if not data: return False, "입력하신 시트에 데이터가 없습니다."
+        
+        df = pd.DataFrame(data)
+        required = ["조이름", "시작홀", "선수명", "핸디캡", "소속"]
+        if not all(col in df.columns for col in required):
+            return False, f"첫 번째 행(헤더)에 필수 컬럼이 모두 있어야 합니다: {', '.join(required)}"
+            
+        new_groups = {}
+        for _, row in df.iterrows():
+            g_name = str(row["조이름"]).strip()
+            p_name = str(row["선수명"]).strip()
+            if not g_name or not p_name: continue
+            
+            s_hole = str(row["시작홀"]).strip()
+            s_hole = int(s_hole) if s_hole.isdigit() else 1
+            dept = str(row["소속"]).strip()
+            
+            hcap = row["핸디캡"]
+            if pd.isna(hcap) or str(hcap).strip().upper() == "NA" or str(hcap).strip() == "":
+                hcap_val = "NA"
+            else:
+                try: hcap_val = int(float(hcap))
+                except: hcap_val = "NA"
+                
+            if g_name not in new_groups:
+                new_groups[g_name] = {"start_hole": s_hole, "players": {}}
+            new_groups[g_name]["players"][p_name] = {"hcap": hcap_val, "dept": dept}
+            
+        if not new_groups:
+            return False, "유효한 조편성 데이터가 없습니다."
+            
+        # 1. 메인 DB(Scores가 있는 시트)에 'Groups' 탭으로 저장해서 모두에게 공유!
+        main_sheet = client.open_by_url(st.secrets["spreadsheet_url"])
+        try:
+            g_ws = main_sheet.worksheet("Groups")
+        except:
+            g_ws = main_sheet.add_worksheet(title="Groups", rows=100, cols=5)
+            
+        g_ws.clear()
+        g_ws.append_row(["조이름", "시작홀", "선수명", "핸디캡", "소속"])
+        rows = []
+        for g, g_info in new_groups.items():
+            for p, p_info in g_info["players"].items():
+                rows.append([g, g_info["start_hole"], p, str(p_info["hcap"]), p_info["dept"]])
+        if rows:
+            g_ws.append_rows(rows)
+            
+        # 2. 내 폰 화면 즉시 갱신
+        st.session_state.groups = new_groups
+        return True, "✅ 조편성 데이터 덮어쓰기 성공! 다른 기기에도 15초 내에 반영됩니다."
+        
+    except Exception as e:
+        return False, f"데이터 가져오기 실패: {e}"
 
-# 🚨 스마트 병합(Merge) 저장 로직
+# --- 기본 하드코딩 조편성 데이터 (메인 시트에 Groups 탭이 없을 때 임시 구동용) ---
+if 'groups' not in st.session_state:
+    st.session_state.groups = {
+        "1A조": {
+            "start_hole": 1,
+            "players": {
+                "노재호": {"hcap": 21, "dept": "세라믹"},
+                "곽재영": {"hcap": 22, "dept": "전자"},
+                "박주원": {"hcap": 15, "dept": "전자"}
+            }
+        }
+    }
+
+# 앱 실행 시점 최신 데이터(점수 + 조편성) 한 번에 로드
+load_all_data_from_gsheet()
+
+# 점수 저장 병합 로직
 def save_scores_to_gsheet(new_scores_dict):
     try:
         client = get_gspread_client()
@@ -149,81 +258,6 @@ def save_scores_to_gsheet(new_scores_dict):
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
-# --- 3. 조편성 데이터 ---
-if 'groups' not in st.session_state:
-    st.session_state.groups = {
-        "1A조": {
-            "start_hole": 1,
-            "players": {
-                "노재호": {"hcap": 21, "dept": "세라믹"},
-                "곽재영": {"hcap": 22, "dept": "전자"},
-                "박주원": {"hcap": 15, "dept": "전자"}
-            }
-        },
-        "1B조": {
-            "start_hole": 1,
-            "players": {
-                "이용일": {"hcap": 25, "dept": "토목"},
-                "신성원": {"hcap": 14, "dept": "전기"},
-                "신현경": {"hcap": 17, "dept": "전자"},
-                "이창호": {"hcap": 23, "dept": "전기"}
-            }
-        },
-        "2조": {
-            "start_hole": 2,
-            "players": {
-                "마이클 안": {"hcap": 8, "dept": "국제학부"},
-                "양진기": {"hcap": "NA", "dept": "전산"},
-                "박종화": {"hcap": 10, "dept": "전산"},
-                "김택규": {"hcap": 13, "dept": "생화학"}
-            }
-        },
-        "3A조": {
-            "start_hole": 3,
-            "players": {
-                "김은혁": {"hcap": 23, "dept": "의학"},
-                "변원석": {"hcap": "NA", "dept": "기계"},
-                "임봉욱": {"hcap": 17, "dept": "건축"},
-                "이은홍": {"hcap": 25, "dept": "건축"}
-            }
-        },
-        "3B조": {
-            "start_hole": 3,
-            "players": {
-                "남명현": {"hcap": 25, "dept": "수학"},
-                "박재효": {"hcap": 34, "dept": "경제"},
-                "우규진": {"hcap": 18, "dept": "전자"},
-                "이미나": {"hcap": 24, "dept": "영문"}
-            }
-        },
-        "4조": {
-            "start_hole": 4,
-            "players": {
-                "임주연": {"hcap": "NA", "dept": "세라믹"},
-                "황경진": {"hcap": "NA", "dept": "금속"},
-                "김윤경": {"hcap": 36, "dept": "-"}
-            }
-        },
-        "5A조": {
-            "start_hole": 5,
-            "players": {
-                "이동휘": {"hcap": "NA", "dept": "금속"},
-                "양성흠": {"hcap": "NA", "dept": "-"},
-                "신재원": {"hcap": "NA", "dept": "전자"},
-                "송창걸": {"hcap": 14, "dept": "기계"}
-            }
-        },
-        "5B조": {
-            "start_hole": 5,
-            "players": {
-                "박준식": {"hcap": 11, "dept": "사체"},
-                "정태양": {"hcap": "NA", "dept": "스포츠레저"},
-                "최성식": {"hcap": 13, "dept": "생명공학"},
-                "김용민": {"hcap": 5, "dept": "전기"}
-            }
-        }
-    }
-
 st.title("⛳ 연세대 골프 대회")
 
 # ==========================================
@@ -243,164 +277,169 @@ st.markdown("---")
 if menu == ":material/edit_document: 스코어 입력":
     
     group_list = list(st.session_state.groups.keys())
+    
+    # 선택된 조가 혹시 삭제되거나 바뀌었다면 초기화
     if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
-        st.session_state.selected_group = group_list[0]
+        st.session_state.selected_group = group_list[0] if group_list else ""
         
     col_title, col_refresh = st.columns([2, 1])
     with col_title:
         st.header("📝 스코어 입력")
     with col_refresh:
         if st.button("🔄 데이터 갱신"):
-            load_scores_from_gsheet()
+            load_all_data_from_gsheet()
             st.session_state.auto_jump = True
             st.toast("✅ 최신 데이터를 불러왔습니다!")
             st.rerun()
             
-    default_idx = group_list.index(st.session_state.selected_group)
-    group_name = st.selectbox("조 선택", group_list, index=default_idx)
-    
-    if st.session_state.selected_group != group_name:
-        st.session_state.selected_group = group_name
-        st.session_state.auto_jump = True
-        st.rerun()
-    
-    group_info = st.session_state.groups[group_name]
-    start_hole = group_info["start_hole"]
-    players_info = group_info["players"]
-    
-    st.info(f"📌 **{group_name}** | 시작 홀: **{start_hole}번 홀** (샷건 방식)")
-    
-    hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
-    
-    hole_idx_key = f"current_hole_idx_{group_name}"
-    
-    if hole_idx_key not in st.session_state:
-        st.session_state[hole_idx_key] = 0
-        st.session_state.auto_jump = True
-        
-    current_idx = st.session_state[hole_idx_key]
-    current_course_hole = hole_sequence[current_idx]
-    
-    if st.session_state.auto_jump:
-        is_current_completed = True
-        for p in players_info.keys():
-            if p not in st.session_state.scores or current_course_hole not in st.session_state.scores[p]:
-                is_current_completed = False
-                break
-                
-        if is_current_completed:
-            auto_idx = current_idx
-            for idx, h_num in enumerate(hole_sequence):
-                comp = True
-                for p in players_info.keys():
-                    if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
-                        comp = False
-                        break
-                if not comp:
-                    auto_idx = idx
-                    break
-            else:
-                auto_idx = 17 
-                
-            if current_idx != auto_idx:
-                st.session_state[hole_idx_key] = auto_idx
-                current_idx = auto_idx
-                current_course_hole = hole_sequence[current_idx]
-    
-    current_par = PAR_LIST[current_course_hole - 1]
-    
-    col_prev, col_info, col_next = st.columns([1, 2, 1])
-    with col_prev:
-        if st.button("◀ 이전 홀") and current_idx > 0:
-            st.session_state.auto_jump = False 
-            st.session_state[hole_idx_key] = current_idx - 1
-            st.rerun()
-    with col_info:
-        st.markdown(f"<div style='text-align: center;'><b>전체 {current_idx + 1}번째 홀</b><br>코스 {current_course_hole}번 (Par {current_par})</div>", unsafe_allow_html=True)
-    with col_next:
-        if st.button("다음 홀 ▶") and current_idx < 17:
-            st.session_state.auto_jump = False
-            st.session_state[hole_idx_key] = current_idx + 1
-            st.rerun()
-            
-    st.markdown("---")
-
-    with st.form(key=f"unified_score_form_{group_name}_{current_idx}", clear_on_submit=True):
-        st.markdown(f"#### 🏌️‍♂️ Hole {current_course_hole}, Par {current_par}")
-        
-        form_inputs = {}
-        for player in players_info.keys():
-            if player not in st.session_state.scores:
-                st.session_state.scores[player] = {}
-                
-            current_val = st.session_state.scores[player].get(current_course_hole, 0)
-            
-            max_over = current_par
-            options = list(range(-2, max_over + 1))
-            if current_val not in options:
-                current_val = 0
-                
-            col_name, col_select = st.columns([1.5, 2.5])
-            with col_name:
-                st.markdown(f"<div style='padding-top: 6px; font-weight: bold; font-size: 0.95rem;'>{player}</div>", unsafe_allow_html=True)
-            with col_select:
-                score_diff = st.selectbox(
-                    f"{player} 성적",
-                    options=options,
-                    index=options.index(current_val) if current_val in options else 2,
-                    format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
-                    key=f"input_{player}_{current_course_hole}",
-                    label_visibility="collapsed"
-                )
-                form_inputs[player] = score_diff
-            
-        submitted = st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔")
-        if submitted:
-            new_inputs = {}
-            for player, diff in form_inputs.items():
-                new_inputs[player] = {current_course_hole: diff}
-            
-            success = save_scores_to_gsheet(new_inputs)
-            
-            if success:
-                st.success("✅ 저장 완료! 구글 시트 반영 후 다음 홀로 이동합니다...")
-                
-                keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
-                for k in keys_to_delete:
-                    del st.session_state[k]
-                    
-                st.session_state[hole_idx_key] = (current_idx + 1) % 18
-                st.session_state.auto_jump = True 
-                time.sleep(1.2)
-                st.rerun()
-
-    st.markdown("---")
-    st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
-    
-    start_history_idx = max(0, current_idx - 4)
-    history_indices = list(range(start_history_idx, current_idx + 1))
-    
-    history_table_rows = []
-    for player in players_info.keys():
-        row_data = {"선수명": player}
-        p_scores = st.session_state.scores.get(player, {})
-        for idx in history_indices:
-            h_num = hole_sequence[idx]
-            h_str = f"{h_num}H"
-            if h_num in p_scores:
-                diff = p_scores[h_num]
-                row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
-            else:
-                row_data[h_str] = "-"
-        history_table_rows.append(row_data)
-        
-    if history_table_rows:
-        df_history = pd.DataFrame(history_table_rows)
-        cols = ["선수명"] + [f"{hole_sequence[idx]}H" for idx in history_indices]
-        df_history = df_history[cols]
-        st.dataframe(df_history, use_container_width=True, hide_index=True)
+    if not group_list:
+        st.warning("등록된 조편성이 없습니다. 관리자 메뉴에서 조편성을 불러와주세요.")
     else:
-        st.caption("아직 기록된 점수가 없습니다.")
+        default_idx = group_list.index(st.session_state.selected_group)
+        group_name = st.selectbox("조 선택", group_list, index=default_idx)
+        
+        if st.session_state.selected_group != group_name:
+            st.session_state.selected_group = group_name
+            st.session_state.auto_jump = True
+            st.rerun()
+        
+        group_info = st.session_state.groups[group_name]
+        start_hole = group_info["start_hole"]
+        players_info = group_info["players"]
+        
+        st.info(f"📌 **{group_name}** | 시작 홀: **{start_hole}번 홀** (샷건 방식)")
+        
+        hole_sequence = [(start_hole - 1 + i) % 18 + 1 for i in range(18)]
+        
+        hole_idx_key = f"current_hole_idx_{group_name}"
+        
+        if hole_idx_key not in st.session_state:
+            st.session_state[hole_idx_key] = 0
+            st.session_state.auto_jump = True
+            
+        current_idx = st.session_state[hole_idx_key]
+        current_course_hole = hole_sequence[current_idx]
+        
+        if st.session_state.auto_jump:
+            is_current_completed = True
+            for p in players_info.keys():
+                if p not in st.session_state.scores or current_course_hole not in st.session_state.scores[p]:
+                    is_current_completed = False
+                    break
+                    
+            if is_current_completed:
+                auto_idx = current_idx
+                for idx, h_num in enumerate(hole_sequence):
+                    comp = True
+                    for p in players_info.keys():
+                        if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
+                            comp = False
+                            break
+                    if not comp:
+                        auto_idx = idx
+                        break
+                else:
+                    auto_idx = 17 
+                    
+                if current_idx != auto_idx:
+                    st.session_state[hole_idx_key] = auto_idx
+                    current_idx = auto_idx
+                    current_course_hole = hole_sequence[current_idx]
+        
+        current_par = PAR_LIST[current_course_hole - 1]
+        
+        col_prev, col_info, col_next = st.columns([1, 2, 1])
+        with col_prev:
+            if st.button("◀ 이전 홀") and current_idx > 0:
+                st.session_state.auto_jump = False 
+                st.session_state[hole_idx_key] = current_idx - 1
+                st.rerun()
+        with col_info:
+            st.markdown(f"<div style='text-align: center;'><b>전체 {current_idx + 1}번째 홀</b><br>코스 {current_course_hole}번 (Par {current_par})</div>", unsafe_allow_html=True)
+        with col_next:
+            if st.button("다음 홀 ▶") and current_idx < 17:
+                st.session_state.auto_jump = False
+                st.session_state[hole_idx_key] = current_idx + 1
+                st.rerun()
+                
+        st.markdown("---")
+
+        with st.form(key=f"unified_score_form_{group_name}_{current_idx}", clear_on_submit=True):
+            st.markdown(f"#### 🏌️‍♂️ Hole {current_course_hole}, Par {current_par}")
+            
+            form_inputs = {}
+            for player in players_info.keys():
+                if player not in st.session_state.scores:
+                    st.session_state.scores[player] = {}
+                    
+                current_val = st.session_state.scores[player].get(current_course_hole, 0)
+                
+                max_over = current_par
+                options = list(range(-2, max_over + 1))
+                if current_val not in options:
+                    current_val = 0
+                    
+                col_name, col_select = st.columns([1.5, 2.5])
+                with col_name:
+                    st.markdown(f"<div style='padding-top: 6px; font-weight: bold; font-size: 0.95rem;'>{player}</div>", unsafe_allow_html=True)
+                with col_select:
+                    score_diff = st.selectbox(
+                        f"{player} 성적",
+                        options=options,
+                        index=options.index(current_val) if current_val in options else 2,
+                        format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
+                        key=f"input_{player}_{current_course_hole}",
+                        label_visibility="collapsed"
+                    )
+                    form_inputs[player] = score_diff
+                
+            submitted = st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔")
+            if submitted:
+                new_inputs = {}
+                for player, diff in form_inputs.items():
+                    new_inputs[player] = {current_course_hole: diff}
+                
+                success = save_scores_to_gsheet(new_inputs)
+                
+                if success:
+                    st.success("✅ 저장 완료! 구글 시트 반영 후 다음 홀로 이동합니다...")
+                    
+                    keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
+                    for k in keys_to_delete:
+                        del st.session_state[k]
+                        
+                    st.session_state[hole_idx_key] = (current_idx + 1) % 18
+                    st.session_state.auto_jump = True 
+                    time.sleep(1.2)
+                    st.rerun()
+
+        st.markdown("---")
+        st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
+        
+        start_history_idx = max(0, current_idx - 4)
+        history_indices = list(range(start_history_idx, current_idx + 1))
+        
+        history_table_rows = []
+        for player in players_info.keys():
+            row_data = {"선수명": player}
+            p_scores = st.session_state.scores.get(player, {})
+            for idx in history_indices:
+                h_num = hole_sequence[idx]
+                h_str = f"{h_num}H"
+                if h_num in p_scores:
+                    diff = p_scores[h_num]
+                    row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
+                else:
+                    row_data[h_str] = "-"
+            history_table_rows.append(row_data)
+            
+        if history_table_rows:
+            df_history = pd.DataFrame(history_table_rows)
+            cols = ["선수명"] + [f"{hole_sequence[idx]}H" for idx in history_indices]
+            df_history = df_history[cols]
+            st.dataframe(df_history, use_container_width=True, hide_index=True)
+        else:
+            st.caption("아직 기록된 점수가 없습니다.")
 
 # ==========================================
 # [메뉴 2] 실시간 리더보드
@@ -412,7 +451,7 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
         st.header("🏆 실시간 리더보드")
     with col_lb_refresh:
         if st.button("🔄 새로고침"):
-            load_scores_from_gsheet()
+            load_all_data_from_gsheet()
             st.toast("✅ 순위표가 업데이트되었습니다!")
             
     st.caption("🔄 구글 시트와 연동되어 실시간으로 15초마다 자동 갱신됩니다.")
@@ -491,19 +530,19 @@ elif menu == ":material/settings: 관리":
         elif admin_password != "":
             st.error("비밀번호가 틀렸습니다.")
     else:
-        st.success("인증되었습니다. 당일 조편성 및 스코어 데이터를 관리할 수 있습니다.")
+        st.success("인증되었습니다. 대회 데이터와 조편성을 관리할 수 있습니다.")
         if st.button("🔒 로그아웃 (잠금)"):
             st.session_state.admin_auth = False
             st.rerun()
             
         st.markdown("---")
         
-        st.subheader("🚨 경기 전 데이터 초기화")
-        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 구글 시트에서 일괄 삭제합니다.")
+        st.subheader("🚨 경기 전 점수 데이터 초기화")
+        st.warning("테스트로 입력된 모든 점수 기록만 구글 시트에서 일괄 삭제합니다. (조편성은 유지됨)")
         
         confirm_reset = st.checkbox("⚠️ 모든 스코어 기록을 삭제하는 것에 동의합니다 (초기화 활성화)")
         if confirm_reset:
-            if st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행"):
+            if st.button("🗑️ 점수 데이터 전체 초기화 실행"):
                 try:
                     client = get_gspread_client()
                     sheet = client.open_by_url(st.secrets["spreadsheet_url"])
@@ -513,7 +552,6 @@ elif menu == ":material/settings: 관리":
                     
                     st.session_state.scores = {}
                     
-                    # 🚨 화면 위치(홀 번호)도 강제로 리셋하는 코드
                     keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_") or k.startswith("current_hole_idx_")]
                     for k in keys_to_delete:
                         del st.session_state[k]
@@ -524,29 +562,29 @@ elif menu == ":material/settings: 관리":
                 except Exception as e:
                     st.error(f"초기화 중 오류 발생: {e}")
         else:
-            st.button("🗑️ 구글 시트 포함 전체 스코어 초기화 실행", disabled=True)
+            st.button("🗑️ 점수 데이터 전체 초기화 실행", disabled=True)
             
         st.markdown("---")
-        st.subheader("📋 조편성 및 선수 명단 관리")
         
-        groups_to_delete = []
-        for group_name, info in list(st.session_state.groups.items()):
-            with st.expander(f"조: {group_name} (시작홀: {info['start_hole']}번)"):
-                new_start_hole = st.number_input(f"시작 홀 변경 ({group_name})", min_value=1, max_value=18, value=int(info['start_hole']), key=f"sh_{group_name}")
-                st.session_state.groups[group_name]['start_hole'] = new_start_hole
-                
-                st.markdown("**소속 선수 및 핸디캡 수정**")
-                players_to_delete = []
-                for player, p_val in list(info['players'].items()):
-                    col1, col2, col3 = st.columns([2, 2, 1])
-                    with col1:
-                        new_name = st.text_input("선수명", value=player, key=f"pname_{group_name}_{player}")
-                    with col2:
-                        h_val_str = str(int(float(p_val['hcap']))) if p_val['hcap'] != "NA" else "NA"
-                        new_hcap = st.text_input("핸디캡 (숫자 또는 NA)", value=h_val_str, key=f"phcap_{group_name}_{player}")
-                    with col3:
-                        if st.button("삭제", key=f"del_p_{group_name}_{player}"):
-                            players_to_delete.append(player)
-                            
-                    if new_name != player and new_name not in st.session_state.groups[group_name]['players']:
-                        st.session_state.groups
+        # 🚨 새롭게 추가된 [조편성 일괄 동기화] 메뉴 (기존 수동 메뉴 대체)
+        st.subheader("📥 조편성 시트에서 일괄 불러오기")
+        st.info(
+            "💡 **조편성 구글 시트 작성 규칙 (첫 번째 시트 기준)**\n\n"
+            "엑셀이나 시트의 첫 번째 행에 반드시 아래 5개의 이름이 있어야 합니다.\n"
+            "`조이름` | `시작홀` | `선수명` | `핸디캡` | `소속`"
+        )
+        
+        import_url = st.text_input("🔗 조편성 데이터가 있는 구글 시트 URL 복사/붙여넣기")
+        
+        if st.button("📥 조편성 데이터 가져와서 전체 기기 덮어쓰기"):
+            if import_url:
+                with st.spinner("데이터를 가져오고 다른 기기에 동기화하는 중입니다..."):
+                    success, msg = import_groups_from_url(import_url)
+                    if success:
+                        st.success(msg)
+                        time.sleep(2.5)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.warning("위에 구글 시트 URL을 먼저 입력해 주세요.")
