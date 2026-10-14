@@ -3,21 +3,20 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 import gspread
 import json
+import time
 from google.oauth2.service_account import Credentials
 
-"""
 # --- 디버깅 시작: Secrets 값이 어떻게 들어오는지 눈으로 확인하기 (현재 숨김 처리됨) ---
-st.write("### 🔍 디버깅 모드")
-try:
-    raw_key = st.secrets["gcp_json"]
-    st.write(f"Key 시작 부분: `{raw_key[:50]}`")
-    st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
-    st.write(f"문자열 길이: {len(raw_key)}")
-    st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
-except Exception as e:
-    st.error(f"Secrets 자체를 읽지 못함: {e}")
-st.markdown("---")
-"""
+# st.write("### 🔍 디버깅 모드")
+# try:
+#     raw_key = st.secrets["gcp_json"]
+#     st.write(f"Key 시작 부분: `{raw_key[:50]}`")
+#     st.write(f"Key 끝 부분: `{raw_key[-50:]}`")
+#     st.write(f"문자열 길이: {len(raw_key)}")
+#     st.write(f"줄바꿈(\\n) 개수: {raw_key.count(chr(10))} 개")
+# except Exception as e:
+#     st.error(f"Secrets 자체를 읽지 못함: {e}")
+# st.markdown("---")
 
 st.set_page_config(
     page_title="연세대 골프 대회 모바일 스코어보드", 
@@ -50,6 +49,10 @@ PAR_LIST = [4, 4, 3, 4, 5, 4, 3, 5, 4, 4, 3, 5, 4, 3, 5, 4, 4, 4]
 
 if 'scores' not in st.session_state:
     st.session_state.scores = {}
+
+# 스마트 점프 기능(자동으로 빈 홀 찾기) 활성화 여부 변수
+if 'auto_jump' not in st.session_state:
+    st.session_state.auto_jump = True
 
 # 🔑 통합 인증 함수
 def get_gspread_client():
@@ -243,35 +246,21 @@ if menu == "📝 스코어 입력":
     with col_title:
         st.header("📝 스코어 입력")
     with col_refresh:
-        # 🚨 [스마트 동기화] 데이터 갱신 시 빈 홀 찾아서 자동 점프
+        # 데이터 갱신 시 자동 점프 기능 켜기
         if st.button("🔄 데이터 갱신"):
             load_scores_from_gsheet()
-            
-            curr_g = st.session_state.selected_group
-            g_info = st.session_state.groups[curr_g]
-            s_hole = g_info["start_hole"]
-            h_seq = [(s_hole - 1 + i) % 18 + 1 for i in range(18)]
-            
-            a_idx = 0
-            for i, h_num in enumerate(h_seq):
-                completed = True
-                for p in g_info["players"].keys():
-                    if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
-                        completed = False
-                        break
-                if not completed:
-                    a_idx = i
-                    break
-            else:
-                a_idx = 17 # 전부 입력 시 마지막 홀로
-                
-            st.session_state[f"current_hole_idx_{curr_g}"] = a_idx
-            st.toast("✅ 최신 데이터를 불러와 미입력 홀로 이동했습니다!")
+            st.session_state.auto_jump = True
+            st.toast("✅ 최신 데이터를 불러왔습니다!")
             st.rerun()
             
     default_idx = group_list.index(st.session_state.selected_group)
     group_name = st.selectbox("조 선택", group_list, index=default_idx)
-    st.session_state.selected_group = group_name
+    
+    # 조를 변경하면 자동 점프 활성화 후 새로고침
+    if st.session_state.selected_group != group_name:
+        st.session_state.selected_group = group_name
+        st.session_state.auto_jump = True
+        st.rerun()
     
     group_info = st.session_state.groups[group_name]
     start_hole = group_info["start_hole"]
@@ -283,37 +272,56 @@ if menu == "📝 스코어 입력":
     
     hole_idx_key = f"current_hole_idx_{group_name}"
     
-    # 🚨 [최초 진입 시 스마트 점프] 미입력 홀 자동 탐색
+    # 🚨 [스마트 점프 1] 최초 진입 시 초기화
     if hole_idx_key not in st.session_state:
-        auto_idx = 0
-        for idx, h_num in enumerate(hole_sequence):
-            is_completed = True
-            for p in players_info.keys():
-                if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
-                    is_completed = False
-                    break
-            if not is_completed:
-                auto_idx = idx
-                break
-        else:
-            auto_idx = 17
-            
-        st.session_state[hole_idx_key] = auto_idx
+        st.session_state[hole_idx_key] = 0
+        st.session_state.auto_jump = True
         
     current_idx = st.session_state[hole_idx_key]
     current_course_hole = hole_sequence[current_idx]
+    
+    # 🚨 [스마트 점프 2] 15초 자동갱신 등으로 DB 변경 시, 현재 보고있는 홀이 이미 다 채워졌다면 자동으로 다음 빈 홀 찾기
+    if st.session_state.auto_jump:
+        is_current_completed = True
+        for p in players_info.keys():
+            if p not in st.session_state.scores or current_course_hole not in st.session_state.scores[p]:
+                is_current_completed = False
+                break
+                
+        if is_current_completed:
+            auto_idx = current_idx
+            for idx, h_num in enumerate(hole_sequence):
+                comp = True
+                for p in players_info.keys():
+                    if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
+                        comp = False
+                        break
+                if not comp:
+                    auto_idx = idx
+                    break
+            else:
+                auto_idx = 17 # 전부 입력 완료 시 마지막 홀 주차
+                
+            if current_idx != auto_idx:
+                st.session_state[hole_idx_key] = auto_idx
+                current_idx = auto_idx
+                current_course_hole = hole_sequence[current_idx]
+    
     current_par = PAR_LIST[current_course_hole - 1]
     
     col_prev, col_info, col_next = st.columns([1, 2, 1])
     with col_prev:
+        # 수동으로 이전 버튼을 누르면 스마트 점프 일시 정지 (수정 방해 금지)
         if st.button("◀ 이전 홀") and current_idx > 0:
-            st.session_state[hole_idx_key] -= 1
+            st.session_state.auto_jump = False 
+            st.session_state[hole_idx_key] = current_idx - 1
             st.rerun()
     with col_info:
         st.markdown(f"<div style='text-align: center;'><b>전체 {current_idx + 1}번째 홀</b><br>코스 {current_course_hole}번 (Par {current_par})</div>", unsafe_allow_html=True)
     with col_next:
         if st.button("다음 홀 ▶") and current_idx < 17:
-            st.session_state[hole_idx_key] += 1
+            st.session_state.auto_jump = False
+            st.session_state[hole_idx_key] = current_idx + 1
             st.rerun()
             
     st.markdown("---")
@@ -356,13 +364,19 @@ if menu == "📝 스코어 입력":
             success = save_scores_to_gsheet(new_inputs)
             
             if success:
-                st.success("저장 완료! 구글 시트 동기화 및 다음 홀로 이동합니다.")
+                st.success("✅ 저장 완료! 구글 시트 반영 후 다음 홀로 이동합니다...")
                 
                 keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
                 for k in keys_to_delete:
                     del st.session_state[k]
                     
                 st.session_state[hole_idx_key] = (current_idx + 1) % 18
+                
+                # 저장 완료했으니 다시 스마트 점프 가동!
+                st.session_state.auto_jump = True 
+                
+                # 🚨 성공 메시지를 1.2초간 보여주어 눈으로 확인할 수 있게 함
+                time.sleep(1.2)
                 st.rerun()
 
     # 조별 입력 현황 확인 테이블
