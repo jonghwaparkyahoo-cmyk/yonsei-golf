@@ -470,37 +470,3 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
     df_lb = pd.DataFrame(leaderboard_data)
     if not df_lb.empty:
         df_lb = df_lb.sort_values(by=["Sort_HasHcap", "Sort_Net"], ascending=[True, True])
-        df_display = df_lb[["선수명", "핸디캡", "Gross", "Net", "시작홀", "현재위치"]].reset_index(drop=True)
-        df_display.index += 1
-        st.dataframe(df_display, use_container_width=True)
-    else:
-        st.info("아직 등록된 성적이 없습니다.")
-
-# ==========================================
-# [메뉴 3] 운영진 관리
-# ==========================================
-elif menu == ":material/settings: 관리":
-    st.header("⚙️ 운영진 전용 관리 패널")
-    
-    if 'admin_auth' not in st.session_state:
-        st.session_state.admin_auth = False
-        
-    CORRECT_PASSWORD = "yonsei2026"
-    
-    if not st.session_state.admin_auth:
-        admin_password = st.text_input("운영진 비밀번호를 입력하세요", type="password")
-        if admin_password == CORRECT_PASSWORD:
-            st.session_state.admin_auth = True
-            st.rerun()
-        elif admin_password != "":
-            st.error("비밀번호가 틀렸습니다.")
-    else:
-        st.success("인증되었습니다. 당일 조편성 및 스코어 데이터를 관리할 수 있습니다.")
-        if st.button("🔒 로그아웃 (잠금)"):
-            st.session_state.admin_auth = False
-            st.rerun()
-            
-        st.markdown("---")
-        
-        st.subheader("🚨 경기 전 데이터 초기화")
-        st.warning("대회 시작 전 테스트로 입력된 모든 점수 기록을 구글 시트
