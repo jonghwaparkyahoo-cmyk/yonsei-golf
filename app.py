@@ -81,13 +81,23 @@ def load_scores_from_gsheet():
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="Scores", rows=100, cols=3)
             worksheet.append_row(["선수명", "홀번호", "점수차"])
+            st.session_state.scores = {}
             return
             
         data = worksheet.get_all_records()
-        if data:
+        
+        # 🚨 [핵심 수정] 무조건 최신 상태 유지를 위해 로컬 변수를 먼저 싹 비워줍니다.
+        st.session_state.scores = {}
+        
+        if not data:
+            # 구글 시트가 텅 비었다면 (초기화 직후) 화면 입력칸 메모리(input_)도 강제 삭제
+            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("input_")]
+            for k in keys_to_delete:
+                del st.session_state[k]
+        else:
+            # 데이터가 있으면 정상적으로 다시 덮어쓰기
             df = pd.DataFrame(data)
             if not df.empty and all(col in df.columns for col in ["선수명", "홀번호", "점수차"]):
-                st.session_state.scores = {}
                 for _, row in df.iterrows():
                     p_name = str(row["선수명"])
                     h_num = int(row["홀번호"])
@@ -145,7 +155,7 @@ def save_scores_to_gsheet(new_scores_dict):
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
-# --- 3. 조편성 데이터 ---
+# --- 3. 조편성 데이터 (핸디캡 소수점 제거) ---
 if 'groups' not in st.session_state:
     st.session_state.groups = {
         "1A조": {
@@ -223,7 +233,7 @@ if 'groups' not in st.session_state:
 st.title("⛳ 연세대 골프 대회")
 
 # ==========================================
-# [모바일 친화적 상단 메뉴바 구성 - 구글 머터리얼 아이콘 적용 완료!]
+# [모바일 친화적 상단 메뉴바 구성]
 # ==========================================
 menu = st.radio(
     "메뉴 이동",
@@ -272,7 +282,7 @@ if menu == ":material/edit_document: 스코어 입력":
     
     hole_idx_key = f"current_hole_idx_{group_name}"
     
-    # 최초 진입 시 초기화
+    # 🚨 [스마트 점프 1] 최초 진입 시 초기화
     if hole_idx_key not in st.session_state:
         st.session_state[hole_idx_key] = 0
         st.session_state.auto_jump = True
@@ -280,7 +290,7 @@ if menu == ":material/edit_document: 스코어 입력":
     current_idx = st.session_state[hole_idx_key]
     current_course_hole = hole_sequence[current_idx]
     
-    # 15초 자동갱신 등으로 DB 변경 시, 현재 보고있는 홀이 이미 다 채워졌다면 자동으로 다음 빈 홀 찾기
+    # 🚨 [스마트 점프 2] 15초 자동갱신 등으로 DB 변경 시, 현재 보고있는 홀이 이미 다 채워졌다면 자동으로 다음 빈 홀 찾기
     if st.session_state.auto_jump:
         is_current_completed = True
         for p in players_info.keys():
@@ -519,8 +529,10 @@ elif menu == ":material/settings: 관리":
                     worksheet.clear()
                     worksheet.append_row(["선수명", "홀번호", "점수차"])
                     
+                    # 내 폰부터 즉시 로컬 데이터 싹 비우기
                     st.session_state.scores = {}
                     
+                    # 🚨 2초 지연 후 리로드! 다른 접속자 폰들은 15초 내에 load_scores_from_gsheet 실행되면서 알아서 빈 화면으로 동기화됨
                     st.success("✅ 모든 스코어 기록이 완벽하게 초기화되었습니다! (새로고침 중...)")
                     time.sleep(2.0)
                     st.rerun()
@@ -560,45 +572,3 @@ elif menu == ":material/settings: 관리":
                         else:
                             st.session_state.groups[group_name]['players'][player]['hcap'] = int(float(new_hcap))
                     except ValueError:
-                        pass
-                        
-                for p in players_to_delete:
-                    del st.session_state.groups[group_name]['players'][p]
-                    st.rerun()
-                    
-                with st.form(key=f"add_player_{group_name}"):
-                    col_ap1, col_ap2, col_ap3, col_ap4 = st.columns([2, 1.5, 1.5, 1])
-                    with col_ap1:
-                        add_name = st.text_input("선수명")
-                    with col_ap2:
-                        add_dept = st.text_input("소속", value="-")
-                    with col_ap3:
-                        add_hcap = st.text_input("핸디캡", value="NA")
-                    with col_ap4:
-                        add_btn = st.form_submit_button("추가")
-                    if add_btn and add_name:
-                        h_val = int(float(add_hcap)) if add_hcap.upper() != "NA" else "NA"
-                        st.session_state.groups[group_name]['players'][add_name] = {"hcap": h_val, "dept": add_dept}
-                        st.success(f"{add_name} 선수 추가 완료!")
-                        st.rerun()
-                        
-                if st.button(f"🗑️ '{group_name}' 조 전체 삭제", key=f"del_g_{group_name}"):
-                    groups_to_delete.append(group_name)
-                    
-        for g in groups_to_delete:
-            del st.session_state.groups[g]
-            st.rerun()
-            
-        st.markdown("---")
-        st.subheader("➕ 새 조 추가하기")
-        with st.form(key="add_group_form"):
-            new_g_name = st.text_input("새 조 이름 (예: 6A조)")
-            new_g_start = st.number_input("시작 홀", min_value=1, max_value=18, value=1)
-            add_g_btn = st.form_submit_button("조 생성하기")
-            if add_g_btn and new_g_name:
-                if new_g_name not in st.session_state.groups:
-                    st.session_state.groups[new_g_name] = {"start_hole": int(new_g_start), "players": {}}
-                    st.success(f"'{new_g_name}' 조가 생성되었습니다!")
-                    st.rerun()
-                else:
-                    st.error("이미 존재하는 조 이름입니다.")
