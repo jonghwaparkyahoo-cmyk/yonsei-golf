@@ -17,7 +17,7 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 8.0 버전의 가장 안정적이고 완벽했던 1줄 고정 CSS 복구
+# 📱 모바일 UI 완벽 1줄 고정 CSS
 st.markdown("""
 <style>
 div.row-widget.stRadio > div {
@@ -60,6 +60,10 @@ div.row-widget.stRadio > div {
     }
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
+    }
+    div[data-testid="stMarkdownContainer"] p {
+        margin-bottom: 0 !important;
+        padding-bottom: 0 !important;
     }
 }
 </style>
@@ -248,6 +252,38 @@ def save_scores_to_gsheet(new_scores_dict):
         st.error(f"🚨 구글 시트 저장 상세 에러: {e}")
         return False
 
+# 🚨 [신규] 일괄 마감 해제 (원상복구) 엔진
+def remove_bulk_score_from_gsheet(player_name):
+    try:
+        client = get_gspread_client()
+        target_url = get_target_url()
+        sheet = client.open_by_url(target_url)
+        ws_scores = sheet.worksheet("Scores")
+        
+        existing_data = ws_scores.get_all_records()
+        db_scores = {}
+        if existing_data:
+            for row in existing_data:
+                p = str(row["선수명"]); h = int(row["홀번호"]); d = int(row["점수차"])
+                if p not in db_scores: db_scores[p] = {}
+                db_scores[p][h] = d
+                
+        # 해당 선수가 99번(일괄입력) 데이터를 가지고 있다면 삭제
+        if player_name in db_scores and 99 in db_scores[player_name]:
+            del db_scores[player_name][99]
+            
+            ws_scores.clear()
+            ws_scores.append_row(["선수명", "홀번호", "점수차"])
+            rows = [[p, h, d] for p, holes in db_scores.items() for h, d in holes.items()]
+            if rows: ws_scores.append_rows(rows)
+            
+            st.session_state.scores = db_scores
+            return True
+        return False
+    except Exception as e:
+        st.error(f"마감 해제 에러: {e}")
+        return False
+
 st.title("⛳ 연세대 골프 대회")
 
 # ==========================================
@@ -303,7 +339,7 @@ if menu == ":material/edit_document: 스코어 입력":
         current_idx = st.session_state[hole_idx_key]
         current_course_hole = hole_sequence[current_idx]
         
-        # 🚨 홀 자동 넘김 엔진 (일괄입력 선수 열외 처리)
+        # 홀 자동 넘김 엔진 (일괄입력 선수 열외)
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
@@ -349,7 +385,6 @@ if menu == ":material/edit_document: 스코어 입력":
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
                 p_scores = st.session_state.scores[player]
                 
-                # 🚨 99번 홀(일괄입력) 데이터 확인
                 is_bulk = 99 in p_scores
                 current_val = p_scores.get(current_course_hole, 0)
                 
@@ -362,8 +397,7 @@ if menu == ":material/edit_document: 스코어 입력":
                     st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 🚨 [콜롬버스의 달걀 마법!] 잠그지 않고 1개짜리 옵션만 던져줍니다.
-                        # 브라우저가 회색으로 만들지 않아서 또렷하게 보이고 크기도 완벽하게 똑같습니다.
+                        # 🔒 일괄마감은 강제 1옵션으로 잠금처리 (회색 탈색 없이 또렷하게)
                         st.selectbox(
                             f"{player} 마감", options=["🔒 일괄마감됨"], index=0,
                             disabled=False, key=f"input_{player}_{current_course_hole}_fake_disabled", label_visibility="collapsed"
@@ -377,7 +411,7 @@ if menu == ":material/edit_document: 스코어 입력":
                         form_inputs[player] = score_diff
                 
             if st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔"):
-                if form_inputs: # 폼 입력 대상이 한 명이라도 있을 때만 저장
+                if form_inputs: 
                     new_inputs = {p: {current_course_hole: d} for p, d in form_inputs.items()}
                     if save_scores_to_gsheet(new_inputs):
                         st.success("✅ 저장 완료! 다음 홀로 이동합니다...")
@@ -524,10 +558,10 @@ elif menu == ":material/settings: 관리":
         if st.button("🔒 로그아웃 (잠금)"): st.session_state.admin_auth = False; st.rerun()
         
         st.markdown("---")
-        st.subheader("🎯 미기록자 최종 점수 일괄 입력")
-        st.info("폰 입력을 누락한 선수의 **최종 점수차(예: +12, E, -2 등)**를 직접 입력하면, 알아서 18홀을 모두 친 것으로 마감 처리되고 리더보드와 조별 요약(TOT)에 즉시 반영됩니다.")
+        st.subheader("🎯 미기록자 최종 점수 강제 마감/해제")
+        st.info("기존 홀별 기록이 일부 입력되어 있어도 무시하고 즉시 최종 점수로 강제 덮어쓰기가 가능합니다. 해제 시 기존 홀 기록으로 원상복구됩니다.")
         
-        col_b1, col_b2, col_b3 = st.columns(3)
+        col_b1, col_b2, col_b3 = st.columns([1.2, 1.2, 1.6])
         with col_b1:
             bulk_group = st.selectbox("조 선택", list(st.session_state.groups.keys()), key="bulk_group")
         with col_b2:
@@ -536,13 +570,24 @@ elif menu == ":material/settings: 관리":
         with col_b3:
             bulk_diff = st.number_input("최종 점수차 (예: 5)", min_value=-36, max_value=100, value=0, step=1)
             
-        if st.button("💾 이 선수의 최종 점수차 강제 등록"):
-            if bulk_player:
-                if save_scores_to_gsheet({bulk_player: {99: bulk_diff}}):
-                    bulk_str = f"+{bulk_diff}" if bulk_diff > 0 else (str(bulk_diff) if bulk_diff < 0 else "E")
-                    st.success(f"✅ {bulk_player} 선수가 최종 타수 '{bulk_str}' 로 즉시 강제 마감되었습니다!")
-                    time.sleep(2.5)
-                    st.rerun()
+        col_b4, col_b5 = st.columns(2)
+        with col_b4:
+            if st.button("💾 강제 마감 적용"):
+                if bulk_player:
+                    if save_scores_to_gsheet({bulk_player: {99: bulk_diff}}):
+                        bulk_str = f"+{bulk_diff}" if bulk_diff > 0 else (str(bulk_diff) if bulk_diff < 0 else "E")
+                        st.success(f"✅ {bulk_player} 선수 '{bulk_str}' 로 마감 완료!")
+                        time.sleep(2.0)
+                        st.rerun()
+        with col_b5:
+            if st.button("🔓 마감 해제 (복구)"):
+                if bulk_player:
+                    if remove_bulk_score_from_gsheet(bulk_player):
+                        st.success(f"✅ 마감 해제 완료! 기존 홀 기록으로 복구되었습니다.")
+                        time.sleep(2.0)
+                        st.rerun()
+                    else:
+                        st.info("해당 선수는 일괄 마감 상태가 아닙니다.")
 
         st.markdown("---")
         st.subheader("📥 새로운 대회 URL 연동")
