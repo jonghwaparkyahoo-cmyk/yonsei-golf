@@ -17,30 +17,60 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 완벽 밀착(Fit) CSS
+# 📱 모바일 UI 강제 1줄 & 튀어나감 방지(Fit) 끝판왕 CSS
 st.markdown("""
 <style>
-.stSelectbox div[data-baseweb="select"] { min-height: 35px; }
+/* 라디오 버튼(메뉴) 스타일링 */
 div.row-widget.stRadio > div {
     flex-direction: row; justify-content: space-around;
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
 }
 
-/* 🚨 모바일 환경(폭 640px 이하)에서 가로 스크롤 없이 화면에 100% 딱 맞게 압축 */
+/* 🚨 모바일 환경(폭 640px 이하) 완벽 제어 */
 @media (max-width: 640px) {
-    div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        gap: 0.15rem !important; /* 컬럼 사이 여백 최소화 */
+    /* 1. 화면 좌우 여백을 최소화하여 공간 확보 */
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        overflow-x: hidden !important;
     }
+    
+    /* 2. 모든 컬럼을 강제로 한 줄에 쑤셔넣기 */
+    div[data-testid="stHorizontalBlock"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 0.2rem !important; /* 컬럼 사이 간격 다이어트 */
+        align-items: center !important;
+    }
+    
+    /* 3. 컬럼의 최소 크기 무력화 (찌그러지더라도 한 줄 유지) */
     div[data-testid="column"] {
         flex: 1 1 0px !important;
-        width: 0 !important;      /* 내용물 크기 무시하고 화면 폭에 강제 맞춤 */
+        width: 0 !important;
         min-width: 0 !important;
-        overflow: hidden !important; /* 튀어나가는 내용 숨김 */
+        padding: 0 !important;
     }
-    /* 버튼 뚱뚱한 여백 제거 */
+    
+    /* 4. Selectbox(점수 선택창) 내부 여백 및 최소 폭 극단적 제거 */
+    div[data-testid="stSelectbox"] { min-width: 0 !important; }
+    div[data-baseweb="select"] { min-width: 0 !important; }
+    div[data-baseweb="select"] > div {
+        padding-left: 0.2rem !important;
+        padding-right: 0.1rem !important;
+        min-height: 32px !important;
+        font-size: 0.8rem !important;
+    }
+    
+    /* 5. 버튼 좌우 여백(Padding) 제거 */
     button[data-testid="baseButton-secondary"] {
-        padding: 0.1rem 0.2rem !important;
+        padding: 0.1rem 0 !important;
+        font-size: 0.75rem !important;
+        min-width: 0 !important;
+    }
+    
+    /* 6. Form 박스 내부 여백 다이어트 */
+    div[data-testid="stForm"] {
+        padding: 0.5rem !important;
     }
 }
 </style>
@@ -308,15 +338,14 @@ if menu == ":material/edit_document: 스코어 입력":
         
         current_par = st.session_state.par_list[current_course_hole - 1]
         
-        # 🚨 [비율 수정] 가운데 글씨 영역에 공간을 더 배정하여 찌그러짐 최소화
-        col_prev, col_info, col_next = st.columns([1, 1.8, 1])
+        # 🚨 [모바일 1줄 핏 조정] 비율을 조정하고 불필요한 공백 방지
+        col_prev, col_info, col_next = st.columns([1, 1.5, 1])
         with col_prev:
             if st.button("◀ 이전") and current_idx > 0:
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            # 🚨 [폰트 수정] 모바일에서 절대 잘리지 않도록 폰트 크기 최적화 및 줄바꿈 허용 안함
-            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.3; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번 홀 (Par {current_par})</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀(Par{current_par})</div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -334,10 +363,10 @@ if menu == ":material/edit_document: 스코어 입력":
                 options = list(range(-2, current_par + 1))
                 if current_val not in options: current_val = 0
                     
-                # 🚨 [비율 수정] 선수 이름 영역과 스코어 선택창 비율 재조정
-                col_name, col_select = st.columns([1.2, 2.8])
+                # 🚨 [모바일 1줄 핏 조정] 텍스트가 selectbox를 밀어내지 않게 조치
+                col_name, col_select = st.columns([1, 1.5])
                 with col_name: 
-                    st.markdown(f"<div style='padding-top: 10px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     score_diff = st.selectbox(
                         f"{player} 성적", options=options, index=options.index(current_val) if current_val in options else 2,
