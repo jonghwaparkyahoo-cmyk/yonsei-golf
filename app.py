@@ -25,17 +25,6 @@ div.row-widget.stRadio > div {
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
 }
 
-/* 🚨 잠긴 입력창(일괄마감됨) 시인성 극대화: 브라우저 강제 회색 탈색 무력화 */
-div[aria-disabled="true"], 
-div[aria-disabled="true"] * {
-    color: #dc3545 !important; /* 진한 붉은색 */
-    -webkit-text-fill-color: #dc3545 !important; /* 모바일 브라우저 강제 탈색 방지 */
-    font-weight: 900 !important;
-}
-div[data-baseweb="select"] > div[aria-disabled="true"] {
-    background-color: #ffebee !important; /* 연한 붉은색 배경 */
-}
-
 @media (max-width: 640px) {
     .block-container {
         padding-left: 0.5rem !important;
@@ -72,6 +61,7 @@ div[data-baseweb="select"] > div[aria-disabled="true"] {
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
     }
+    /* 마크다운 여백 찌꺼기 완벽 제거 */
     div[data-testid="stMarkdownContainer"] p {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
@@ -318,7 +308,7 @@ if menu == ":material/edit_document: 스코어 입력":
         current_idx = st.session_state[hole_idx_key]
         current_course_hole = hole_sequence[current_idx]
         
-        # 🚨 홀 자동 넘김 엔진 (일괄입력 선수 열외 처리)
+        # 🚨 홀 자동 넘김 엔진
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
@@ -376,10 +366,15 @@ if menu == ":material/edit_document: 스코어 입력":
                     st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 🚨 CSS로 디자인된 진한 붉은색 잠금 입력창 출력
-                        st.selectbox(
-                            f"{player} 마감", options=["🔒 일괄마감됨"], index=0,
-                            disabled=True, key=f"input_{player}_{current_course_hole}_disabled", label_visibility="collapsed"
+                        # 🚨 [해결책] 브라우저 강제 회색 탈색을 막기 위해 가짜 HTML 뱃지(Badge) 생성
+                        # Selectbox와 동일한 35px 높이, 눈에 띄는 붉은색 바탕과 글자색 적용
+                        st.markdown(
+                            "<div style='display: flex; align-items: center; justify-content: center; "
+                            "height: 35px; background-color: #ffebee; color: #dc3545; border-radius: 4px; "
+                            "font-weight: bold; font-size: 0.85rem; width: 100%; border: 1px solid #f5c6cb;'>"
+                            "🔒 마감됨"
+                            "</div>", 
+                            unsafe_allow_html=True
                         )
                     else:
                         score_diff = st.selectbox(
