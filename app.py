@@ -17,7 +17,7 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 강제 1줄 & 튀어나감 방지(Fit) 끝판왕 CSS
+# 📱 모바일 UI 완벽 1줄 고정 (테스트 검증된 Grid 방식 적용)
 st.markdown("""
 <style>
 /* 라디오 버튼(메뉴) 스타일링 */
@@ -26,7 +26,7 @@ div.row-widget.stRadio > div {
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
 }
 
-/* 🚨 모바일 환경(폭 640px 이하) 완벽 제어 */
+/* 🚨 모바일 환경(폭 640px 이하) 강력한 CSS Grid 분할 적용 */
 @media (max-width: 640px) {
     /* 1. 화면 좌우 여백을 최소화하여 공간 확보 */
     .block-container {
@@ -35,18 +35,18 @@ div.row-widget.stRadio > div {
         overflow-x: hidden !important;
     }
     
-    /* 2. 모든 컬럼을 강제로 한 줄에 쑤셔넣기 */
+    /* 2. Flex 대신 Grid 방식을 사용하여 무조건 화면에 꽉 맞게 N등분 강제 분할 */
     div[data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 0.2rem !important; /* 컬럼 사이 간격 다이어트 */
-        align-items: center !important;
+        display: grid !important;
+        grid-auto-flow: column !important;
+        grid-auto-columns: minmax(0, 1fr) !important;
+        gap: 4px !important;
+        overflow-x: hidden !important;
     }
     
-    /* 3. 컬럼의 최소 크기 무력화 (찌그러지더라도 한 줄 유지) */
+    /* 3. 컬럼의 튀어나감 완벽 차단 */
     div[data-testid="column"] {
-        flex: 1 1 0px !important;
-        width: 0 !important;
+        width: 100% !important;
         min-width: 0 !important;
         padding: 0 !important;
     }
@@ -61,11 +61,12 @@ div.row-widget.stRadio > div {
         font-size: 0.8rem !important;
     }
     
-    /* 5. 버튼 좌우 여백(Padding) 제거 */
+    /* 5. 버튼이 분할된 칸 안에서 꽉 차게 예쁘게 들어가도록 조정 */
     button[data-testid="baseButton-secondary"] {
-        padding: 0.1rem 0 !important;
+        padding: 0.2rem 0 !important;
         font-size: 0.75rem !important;
         min-width: 0 !important;
+        width: 100% !important;
     }
     
     /* 6. Form 박스 내부 여백 다이어트 */
@@ -338,14 +339,14 @@ if menu == ":material/edit_document: 스코어 입력":
         
         current_par = st.session_state.par_list[current_course_hole - 1]
         
-        # 🚨 [모바일 1줄 핏 조정] 비율을 조정하고 불필요한 공백 방지
-        col_prev, col_info, col_next = st.columns([1, 1.5, 1])
+        col_prev, col_info, col_next = st.columns(3) # Grid 모드에서는 3등분 무시되고 강제 1:1:1 적용됨
         with col_prev:
             if st.button("◀ 이전") and current_idx > 0:
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀(Par{current_par})</div>", unsafe_allow_html=True)
+            # 글씨 자르기/줄바꿈 최적화
+            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀</div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -363,8 +364,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 options = list(range(-2, current_par + 1))
                 if current_val not in options: current_val = 0
                     
-                # 🚨 [모바일 1줄 핏 조정] 텍스트가 selectbox를 밀어내지 않게 조치
-                col_name, col_select = st.columns([1, 1.5])
+                col_name, col_select = st.columns(2) # 모바일 Grid에 의해 1:1로 강제 정렬
                 with col_name: 
                     st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
