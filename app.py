@@ -37,6 +37,7 @@ div.row-widget.stRadio > div {
         grid-auto-columns: minmax(0, 1fr) !important;
         gap: 4px !important;
         overflow-x: hidden !important;
+        align-items: center !important; /* 수직 중앙 정렬 강제 */
     }
     div[data-testid="column"] {
         width: 100% !important;
@@ -48,7 +49,7 @@ div.row-widget.stRadio > div {
     div[data-baseweb="select"] > div {
         padding-left: 0.2rem !important;
         padding-right: 0.1rem !important;
-        min-height: 32px !important;
+        min-height: 35px !important;
         font-size: 0.8rem !important;
     }
     button[data-testid="baseButton-secondary"] {
@@ -333,7 +334,8 @@ if menu == ":material/edit_document: 스코어 입력":
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀(Par{current_par})</div>", unsafe_allow_html=True)
+            # 여기도 수직 정렬 완벽 보장
+            st.markdown(f"<div style='display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 35px; font-size: 0.75rem; line-height: 1.2; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><span>{current_course_hole}번홀(Par{current_par})</span></div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -358,11 +360,12 @@ if menu == ":material/edit_document: 스코어 입력":
                     
                 col_name, col_select = st.columns(2)
                 with col_name: 
-                    st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
+                    # 🚨 [수직 정렬 마법 적용] 높이를 35px로 고정하고 Flex 로 수직 가운데 정렬
+                    st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 일괄입력 선수는 잠금 처리
-                        st.markdown("<div style='padding-top: 5px; color: #888; font-size: 0.85rem; text-align: right;'>✅ 일괄 마감됨</div>", unsafe_allow_html=True)
+                        # 🚨 [수직 정렬 마법 적용] 글씨 잘림 방지 (selectbox와 완벽하게 동일한 높이와 수직 중앙 정렬 배정)
+                        st.markdown("<div style='display: flex; align-items: center; justify-content: flex-end; min-height: 35px; margin: 0; color: #888; font-size: 0.85rem; font-weight: bold;'>✅ 일괄마감됨</div>", unsafe_allow_html=True)
                     else:
                         score_diff = st.selectbox(
                             f"{player} 성적", options=options, index=options.index(current_val),
@@ -519,7 +522,6 @@ elif menu == ":material/settings: 관리":
         st.success("인증 완료. 새로운 대회를 시작하거나 기록을 초기화할 수 있습니다.")
         if st.button("🔒 로그아웃 (잠금)"): st.session_state.admin_auth = False; st.rerun()
         
-        # 🚨 [수정] 점수차(Diff) 기반 일괄 입력 인터페이스
         st.markdown("---")
         st.subheader("🎯 미기록자 최종 점수 일괄 입력")
         st.info("폰 입력을 누락한 선수의 **최종 점수차(예: +12, E, -2 등)**를 직접 입력하면, 알아서 18홀을 모두 친 것으로 마감 처리되고 리더보드와 조별 요약(TOT)에 즉시 반영됩니다.")
