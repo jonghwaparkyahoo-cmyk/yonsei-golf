@@ -17,13 +17,26 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 모바일 컴팩트 스타일링 CSS
+# 📱 모바일 UI 최적화 CSS (한 줄 고정의 마법)
 st.markdown("""
 <style>
 .stSelectbox div[data-baseweb="select"] { min-height: 35px; }
 div.row-widget.stRadio > div {
     flex-direction: row; justify-content: space-around;
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
+}
+
+/* 🚨 모바일 환경(폭 640px 이하)에서 st.columns 가 세로로 떨어지는 현상을 막고 무조건 1줄로 고정 */
+@media (max-width: 640px) {
+    div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 0.3rem !important; /* 컬럼 사이 여백 최소화 */
+    }
+    div[data-testid="column"] {
+        width: auto !important;
+        flex: 1 1 0% !important;
+        min-width: 0 !important; /* 좁은 화면에서도 비율에 맞춰 찌그러지도록 허용 */
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -291,15 +304,16 @@ if menu == ":material/edit_document: 스코어 입력":
         
         current_par = st.session_state.par_list[current_course_hole - 1]
         
-        col_prev, col_info, col_next = st.columns([1, 2, 1])
+        # 🚨 [수정사항 1] 이전/다음 홀 네비게이션 비율 및 글자 축소로 모바일 최적화
+        col_prev, col_info, col_next = st.columns([1, 1.6, 1])
         with col_prev:
-            if st.button("◀ 이전 홀") and current_idx > 0:
+            if st.button("◀ 이전") and current_idx > 0:
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center;'><b>전체 {current_idx + 1}번째 진행</b><br>코스 {current_course_hole}번 (Par {current_par})</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 0.85rem; line-height: 1.2; padding-top: 5px;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번 홀 (Par {current_par})</div>", unsafe_allow_html=True)
         with col_next:
-            if st.button("다음 홀 ▶") and current_idx < 17:
+            if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
                 st.session_state[hole_idx_key] = current_idx + 1; st.rerun()
                 
@@ -315,8 +329,11 @@ if menu == ":material/edit_document: 스코어 입력":
                 options = list(range(-2, current_par + 1))
                 if current_val not in options: current_val = 0
                     
-                col_name, col_select = st.columns([1.5, 2.5])
-                with col_name: st.markdown(f"<div style='padding-top: 6px; font-weight: bold;'>{player}</div>", unsafe_allow_html=True)
+                # 🚨 [수정사항 2] 선수 이름과 스코어 입력창이 모바일에서 한 줄로 표시되도록 비율 조정
+                col_name, col_select = st.columns([1, 2])
+                with col_name: 
+                    # 텍스트가 길어도 한 줄 유지 (생략 기호 적용)
+                    st.markdown(f"<div style='padding-top: 10px; font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     score_diff = st.selectbox(
                         f"{player} 성적", options=options, index=options.index(current_val) if current_val in options else 2,
@@ -334,7 +351,6 @@ if menu == ":material/edit_document: 스코어 입력":
                     st.session_state.auto_jump = True 
                     time.sleep(1.2); st.rerun()
 
-        # 🚨 최근 성적 요약 (TOT 컬럼 및 색상 강조 추가)
         st.markdown("---")
         st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
         start_history_idx = max(0, current_idx - 4)
@@ -345,14 +361,12 @@ if menu == ":material/edit_document: 스코어 입력":
             row_data = {"선수명": player}
             p_scores = st.session_state.scores.get(player, {})
             
-            # --- 누적 점수차(TOT) 계산 ---
             tot_diff = sum(p_scores.values())
             if len(p_scores) > 0:
                 tot_str = f"+{tot_diff}" if tot_diff > 0 else (str(tot_diff) if tot_diff < 0 else "E")
             else:
                 tot_str = "-"
                 
-            # 최근 홀 기록
             for idx in history_indices:
                 h_num = hole_sequence[idx]
                 h_str = f"{h_num}H"
@@ -361,17 +375,14 @@ if menu == ":material/edit_document: 스코어 입력":
                     row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
                 else: row_data[h_str] = "-"
                 
-            # 마지막 열에 TOT 추가
             row_data["TOT"] = tot_str
             history_table_rows.append(row_data)
             
         if history_table_rows:
             df_history = pd.DataFrame(history_table_rows)
-            # 컬럼 순서 고정 (선수명 -> N번 홀들 -> TOT)
             cols = ["선수명"] + [f"{hole_sequence[idx]}H" for idx in history_indices] + ["TOT"]
             df_history = df_history[cols]
             
-            # TOT 컬럼 색상 하이라이팅 적용
             def highlight_tot(col):
                 if col.name == 'TOT':
                     return ['background-color: #fff3cd; color: #856404; font-weight: bold;'] * len(col)
@@ -416,7 +427,6 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
                 net_score = str(net_val)
             else: net_score = "-"
                 
-            # 🚨 현재 위치를 진행할 다음 홀로 직관적으로 변경
             if played_count >= 18:
                 current_pos = "F"
             else:
@@ -476,16 +486,15 @@ elif menu == ":material/settings: 관리":
                 try:
                     with st.spinner("데이터를 가져오는 중입니다..."):
                         client = get_gspread_client()
-                        test_sheet = client.open_by_url(new_url) # URL 유효성 테스트
+                        test_sheet = client.open_by_url(new_url) 
                         
-                        # 마스터 Config 업데이트
                         master_sheet = client.open_by_url(st.secrets["spreadsheet_url"])
                         try: ws_config = master_sheet.worksheet("AppConfig")
                         except: ws_config = master_sheet.add_worksheet(title="AppConfig", rows=10, cols=2)
                         ws_config.update_acell('A1', 'TargetURL')
                         ws_config.update_acell('B1', new_url)
                         
-                        st.cache_data.clear() # 캐시 강제 삭제하여 전파
+                        st.cache_data.clear()
                         st.success("✅ 새로운 대회 설정이 완벽하게 연동되었습니다! (새로고침 중...)")
                         time.sleep(2.0); st.rerun()
                 except Exception as e:
