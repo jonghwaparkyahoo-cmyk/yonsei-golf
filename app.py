@@ -17,12 +17,23 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 완벽 1줄 고정 (테스트 검증된 Grid 방식 적용)
+# 📱 모바일 UI 완벽 1줄 고정 & 잘림 방지 CSS
 st.markdown("""
 <style>
 div.row-widget.stRadio > div {
     flex-direction: row; justify-content: space-around;
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
+}
+
+/* 🚨 잠긴 입력창(일괄마감됨) 시인성 극대화: 브라우저 강제 회색 탈색 무력화 */
+div[aria-disabled="true"], 
+div[aria-disabled="true"] * {
+    color: #dc3545 !important; /* 진한 붉은색 */
+    -webkit-text-fill-color: #dc3545 !important; /* 모바일 브라우저 강제 탈색 방지 */
+    font-weight: 900 !important;
+}
+div[data-baseweb="select"] > div[aria-disabled="true"] {
+    background-color: #ffebee !important; /* 연한 붉은색 배경 */
 }
 
 @media (max-width: 640px) {
@@ -61,7 +72,6 @@ div.row-widget.stRadio > div {
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
     }
-    /* 마크다운 여백 찌꺼기 완벽 제거 */
     div[data-testid="stMarkdownContainer"] p {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
@@ -312,7 +322,7 @@ if menu == ":material/edit_document: 스코어 입력":
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
-                if 99 in st.session_state.scores.get(p, {}): continue # 일괄입력자 패스
+                if 99 in st.session_state.scores.get(p, {}): continue 
                 if p not in st.session_state.scores or current_course_hole not in st.session_state.scores[p]:
                     is_current_completed = False; break
             if is_current_completed:
@@ -320,7 +330,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 for idx, h_num in enumerate(hole_sequence):
                     comp = True
                     for p in players_info.keys():
-                        if 99 in st.session_state.scores.get(p, {}): continue # 일괄입력자 패스
+                        if 99 in st.session_state.scores.get(p, {}): continue 
                         if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
                             comp = False; break
                     if not comp: auto_idx = idx; break
@@ -354,7 +364,6 @@ if menu == ":material/edit_document: 스코어 입력":
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
                 p_scores = st.session_state.scores[player]
                 
-                # 🚨 99번 홀(일괄입력) 데이터 확인
                 is_bulk = 99 in p_scores
                 current_val = p_scores.get(current_course_hole, 0)
                 
@@ -364,11 +373,10 @@ if menu == ":material/edit_document: 스코어 입력":
                     
                 col_name, col_select = st.columns(2)
                 with col_name: 
-                    # 선수 이름 수직 중앙 정렬
                     st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 🚨 [해결책] 글씨 꼼수 대신 "진짜 셀렉트박스"를 띄우고 비활성화(disabled)시킴! 잘림 원천 봉쇄
+                        # 🚨 CSS로 디자인된 진한 붉은색 잠금 입력창 출력
                         st.selectbox(
                             f"{player} 마감", options=["🔒 일괄마감됨"], index=0,
                             disabled=True, key=f"input_{player}_{current_course_hole}_disabled", label_visibility="collapsed"
