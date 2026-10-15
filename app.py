@@ -17,7 +17,7 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 완벽 1줄 고정 & 잘림 방지 CSS
+# 📱 8.0 버전의 가장 안정적이고 완벽했던 1줄 고정 CSS 복구
 st.markdown("""
 <style>
 div.row-widget.stRadio > div {
@@ -60,11 +60,6 @@ div.row-widget.stRadio > div {
     }
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
-    }
-    /* 마크다운 여백 찌꺼기 완벽 제거 */
-    div[data-testid="stMarkdownContainer"] p {
-        margin-bottom: 0 !important;
-        padding-bottom: 0 !important;
     }
 }
 </style>
@@ -308,7 +303,7 @@ if menu == ":material/edit_document: 스코어 입력":
         current_idx = st.session_state[hole_idx_key]
         current_course_hole = hole_sequence[current_idx]
         
-        # 🚨 홀 자동 넘김 엔진
+        # 🚨 홀 자동 넘김 엔진 (일괄입력 선수 열외 처리)
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
@@ -354,6 +349,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
                 p_scores = st.session_state.scores[player]
                 
+                # 🚨 99번 홀(일괄입력) 데이터 확인
                 is_bulk = 99 in p_scores
                 current_val = p_scores.get(current_course_hole, 0)
                 
@@ -366,15 +362,11 @@ if menu == ":material/edit_document: 스코어 입력":
                     st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 🚨 [해결책] 브라우저 강제 회색 탈색을 막기 위해 가짜 HTML 뱃지(Badge) 생성
-                        # Selectbox와 동일한 35px 높이, 눈에 띄는 붉은색 바탕과 글자색 적용
-                        st.markdown(
-                            "<div style='display: flex; align-items: center; justify-content: center; "
-                            "height: 35px; background-color: #ffebee; color: #dc3545; border-radius: 4px; "
-                            "font-weight: bold; font-size: 0.85rem; width: 100%; border: 1px solid #f5c6cb;'>"
-                            "🔒 마감됨"
-                            "</div>", 
-                            unsafe_allow_html=True
+                        # 🚨 [콜롬버스의 달걀 마법!] 잠그지 않고 1개짜리 옵션만 던져줍니다.
+                        # 브라우저가 회색으로 만들지 않아서 또렷하게 보이고 크기도 완벽하게 똑같습니다.
+                        st.selectbox(
+                            f"{player} 마감", options=["🔒 일괄마감됨"], index=0,
+                            disabled=False, key=f"input_{player}_{current_course_hole}_fake_disabled", label_visibility="collapsed"
                         )
                     else:
                         score_diff = st.selectbox(
@@ -385,7 +377,7 @@ if menu == ":material/edit_document: 스코어 입력":
                         form_inputs[player] = score_diff
                 
             if st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔"):
-                if form_inputs: 
+                if form_inputs: # 폼 입력 대상이 한 명이라도 있을 때만 저장
                     new_inputs = {p: {current_course_hole: d} for p, d in form_inputs.items()}
                     if save_scores_to_gsheet(new_inputs):
                         st.success("✅ 저장 완료! 다음 홀로 이동합니다...")
