@@ -20,13 +20,11 @@ st_autorefresh(interval=15000, key="datarefresh")
 # 📱 모바일 UI 완벽 1줄 고정 (테스트 검증된 Grid 방식 적용)
 st.markdown("""
 <style>
-/* 라디오 버튼(메뉴) 스타일링 */
 div.row-widget.stRadio > div {
     flex-direction: row; justify-content: space-around;
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
 }
 
-/* 🚨 모바일 환경(폭 640px 이하) 강력한 CSS Grid 분할 적용 */
 @media (max-width: 640px) {
     .block-container {
         padding-left: 0.5rem !important;
@@ -304,9 +302,11 @@ if menu == ":material/edit_document: 스코어 입력":
         current_idx = st.session_state[hole_idx_key]
         current_course_hole = hole_sequence[current_idx]
         
+        # 🚨 홀 자동 넘김 엔진 (일괄입력 선수 열외 처리)
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
+                if 99 in st.session_state.scores.get(p, {}): continue # 일괄입력자 패스
                 if p not in st.session_state.scores or current_course_hole not in st.session_state.scores[p]:
                     is_current_completed = False; break
             if is_current_completed:
@@ -314,6 +314,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 for idx, h_num in enumerate(hole_sequence):
                     comp = True
                     for p in players_info.keys():
+                        if 99 in st.session_state.scores.get(p, {}): continue # 일괄입력자 패스
                         if p not in st.session_state.scores or h_num not in st.session_state.scores[p]:
                             comp = False; break
                     if not comp: auto_idx = idx; break
@@ -345,9 +346,12 @@ if menu == ":material/edit_document: 스코어 입력":
             form_inputs = {}
             for player in players_info.keys():
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
-                current_val = st.session_state.scores[player].get(current_course_hole, 0)
+                p_scores = st.session_state.scores[player]
                 
-                # 🚨 Par 4와 Par 5에서만 더블이글(-3) 선택 가능하도록 스마트 옵션 적용
+                # 🚨 99번 홀(일괄입력) 데이터 확인
+                is_bulk = 99 in p_scores
+                current_val = p_scores.get(current_course_hole, 0)
+                
                 min_score_diff = -3 if current_par >= 4 else -2
                 options = list(range(min_score_diff, current_par + 1))
                 if current_val not in options: current_val = 0
@@ -356,22 +360,31 @@ if menu == ":material/edit_document: 스코어 입력":
                 with col_name: 
                     st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
-                    # 🚨 선택창 라벨에 더블이글(-3) 추가
-                    score_diff = st.selectbox(
-                        f"{player} 성적", options=options, index=options.index(current_val),
-                        format_func=lambda x: "더블이글(-3)" if x<=-3 else ("이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}"))),
-                        key=f"input_{player}_{current_course_hole}", label_visibility="collapsed"
-                    )
-                    form_inputs[player] = score_diff
+                    if is_bulk:
+                        # 일괄입력 선수는 잠금 처리
+                        st.markdown("<div style='padding-top: 5px; color: #888; font-size: 0.85rem; text-align: right;'>✅ 일괄 마감됨</div>", unsafe_allow_html=True)
+                    else:
+                        score_diff = st.selectbox(
+                            f"{player} 성적", options=options, index=options.index(current_val),
+                            format_func=lambda x: "더블이글(-3)" if x<=-3 else ("이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}"))),
+                            key=f"input_{player}_{current_course_hole}", label_visibility="collapsed"
+                        )
+                        form_inputs[player] = score_diff
                 
             if st.form_submit_button("💾 이 홀의 스코어 저장 및 다음 홀로 ➔"):
-                new_inputs = {p: {current_course_hole: d} for p, d in form_inputs.items()}
-                if save_scores_to_gsheet(new_inputs):
-                    st.success("✅ 저장 완료! 다음 홀로 이동합니다...")
-                    for k in [k for k in st.session_state.keys() if k.startswith("input_")]: del st.session_state[k]
+                if form_inputs: # 폼 입력 대상이 한 명이라도 있을 때만 저장
+                    new_inputs = {p: {current_course_hole: d} for p, d in form_inputs.items()}
+                    if save_scores_to_gsheet(new_inputs):
+                        st.success("✅ 저장 완료! 다음 홀로 이동합니다...")
+                        for k in [k for k in st.session_state.keys() if k.startswith("input_")]: del st.session_state[k]
+                        st.session_state[hole_idx_key] = (current_idx + 1) % 18
+                        st.session_state.auto_jump = True 
+                        time.sleep(1.2); st.rerun()
+                else:
+                    st.info("모든 선수가 일괄 마감 처리되어 넘어갑니다.")
                     st.session_state[hole_idx_key] = (current_idx + 1) % 18
                     st.session_state.auto_jump = True 
-                    time.sleep(1.2); st.rerun()
+                    time.sleep(1.0); st.rerun()
 
         st.markdown("---")
         st.markdown(f"📋 **[{group_name} 최근 성적 요약]**")
@@ -382,8 +395,14 @@ if menu == ":material/edit_document: 스코어 입력":
         for player in players_info.keys():
             row_data = {"선수명": player}
             p_scores = st.session_state.scores.get(player, {})
+            is_bulk = 99 in p_scores
             
-            tot_diff = sum(p_scores.values())
+            # 누적 점수차(TOT) 산출 - 일괄입력자도 이 TOT 칸에 점수가 표시됨!
+            if is_bulk:
+                tot_diff = p_scores[99]
+            else:
+                tot_diff = sum([v for k, v in p_scores.items() if k != 99])
+                
             if len(p_scores) > 0:
                 tot_str = f"+{tot_diff}" if tot_diff > 0 else (str(tot_diff) if tot_diff < 0 else "E")
             else:
@@ -392,9 +411,10 @@ if menu == ":material/edit_document: 스코어 입력":
             for idx in history_indices:
                 h_num = hole_sequence[idx]
                 h_str = f"{h_num}H"
-                if h_num in p_scores:
+                if is_bulk:
+                    row_data[h_str] = "-" # 개별 홀은 비워둠
+                elif h_num in p_scores:
                     diff = p_scores[h_num]
-                    # 🚨 요약 테이블에서도 0 대신 파(0), -3 대신 더블이글(-3) 표시
                     if diff == 0: row_data[h_str] = "파(0)"
                     elif diff == -1: row_data[h_str] = "버디(-1)"
                     elif diff == -2: row_data[h_str] = "이글(-2)"
@@ -439,11 +459,14 @@ elif menu == ":material/leaderboard: 실시간 리더보드":
         for player, p_data in info["players"].items():
             hcap = p_data["hcap"]
             p_scores = st.session_state.scores.get(player, {})
-            played_count = len(p_scores)
+            is_bulk = 99 in p_scores
             
-            gross_diff_total = 0
-            for h, diff in p_scores.items():
-                gross_diff_total += diff
+            played_count = 18 if is_bulk else len([k for k in p_scores.keys() if k != 99])
+            
+            if is_bulk:
+                gross_diff_total = p_scores[99]
+            else:
+                gross_diff_total = sum([v for k, v in p_scores.items() if k != 99])
                 
             has_hcap = (hcap != "NA")
             
@@ -495,13 +518,32 @@ elif menu == ":material/settings: 관리":
     else:
         st.success("인증 완료. 새로운 대회를 시작하거나 기록을 초기화할 수 있습니다.")
         if st.button("🔒 로그아웃 (잠금)"): st.session_state.admin_auth = False; st.rerun()
+        
+        # 🚨 [수정] 점수차(Diff) 기반 일괄 입력 인터페이스
+        st.markdown("---")
+        st.subheader("🎯 미기록자 최종 점수 일괄 입력")
+        st.info("폰 입력을 누락한 선수의 **최종 점수차(예: +12, E, -2 등)**를 직접 입력하면, 알아서 18홀을 모두 친 것으로 마감 처리되고 리더보드와 조별 요약(TOT)에 즉시 반영됩니다.")
+        
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            bulk_group = st.selectbox("조 선택", list(st.session_state.groups.keys()), key="bulk_group")
+        with col_b2:
+            bulk_players = list(st.session_state.groups[bulk_group]["players"].keys()) if bulk_group else []
+            bulk_player = st.selectbox("선수명", bulk_players, key="bulk_player")
+        with col_b3:
+            bulk_diff = st.number_input("최종 점수차 (예: 5)", min_value=-36, max_value=100, value=0, step=1)
             
+        if st.button("💾 이 선수의 최종 점수차 강제 등록"):
+            if bulk_player:
+                if save_scores_to_gsheet({bulk_player: {99: bulk_diff}}):
+                    bulk_str = f"+{bulk_diff}" if bulk_diff > 0 else (str(bulk_diff) if bulk_diff < 0 else "E")
+                    st.success(f"✅ {bulk_player} 선수가 최종 타수 '{bulk_str}' 로 즉시 강제 마감되었습니다!")
+                    time.sleep(2.5)
+                    st.rerun()
+
         st.markdown("---")
         st.subheader("📥 새로운 대회 URL 연동")
-        st.info(
-            "이곳에 **조편성, 스코어카드, 대회방식** 시트가 작성된 구글 시트 URL을 넣고 동기화하세요.\n\n"
-            "이 기기뿐만 아니라 **접속한 모든 사용자의 앱이 즉시 해당 대회로 전환**됩니다!"
-        )
+        st.info("이곳에 **조편성, 스코어카드, 대회방식** 시트가 작성된 구글 시트 URL을 넣고 동기화하세요. 접속한 모든 사용자의 앱이 즉시 해당 대회로 전환됩니다!")
         
         current_url = get_target_url()
         new_url = st.text_input("🔗 대회용 구글 시트 URL 복사/붙여넣기", value=current_url)
