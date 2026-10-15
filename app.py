@@ -28,14 +28,11 @@ div.row-widget.stRadio > div {
 
 /* 🚨 모바일 환경(폭 640px 이하) 강력한 CSS Grid 분할 적용 */
 @media (max-width: 640px) {
-    /* 1. 화면 좌우 여백을 최소화하여 공간 확보 */
     .block-container {
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
         overflow-x: hidden !important;
     }
-    
-    /* 2. Flex 대신 Grid 방식을 사용하여 무조건 화면에 꽉 맞게 N등분 강제 분할 */
     div[data-testid="stHorizontalBlock"] {
         display: grid !important;
         grid-auto-flow: column !important;
@@ -43,15 +40,11 @@ div.row-widget.stRadio > div {
         gap: 4px !important;
         overflow-x: hidden !important;
     }
-    
-    /* 3. 컬럼의 튀어나감 완벽 차단 */
     div[data-testid="column"] {
         width: 100% !important;
         min-width: 0 !important;
         padding: 0 !important;
     }
-    
-    /* 4. Selectbox(점수 선택창) 내부 여백 및 최소 폭 극단적 제거 */
     div[data-testid="stSelectbox"] { min-width: 0 !important; }
     div[data-baseweb="select"] { min-width: 0 !important; }
     div[data-baseweb="select"] > div {
@@ -60,16 +53,12 @@ div.row-widget.stRadio > div {
         min-height: 32px !important;
         font-size: 0.8rem !important;
     }
-    
-    /* 5. 버튼이 분할된 칸 안에서 꽉 차게 예쁘게 들어가도록 조정 */
     button[data-testid="baseButton-secondary"] {
         padding: 0.2rem 0 !important;
         font-size: 0.75rem !important;
         min-width: 0 !important;
         width: 100% !important;
     }
-    
-    /* 6. Form 박스 내부 여백 다이어트 */
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
     }
@@ -281,7 +270,6 @@ if menu == ":material/edit_document: 스코어 입력":
     if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
         st.session_state.selected_group = group_list[0] if group_list else ""
         
-    # 🚨 [수정] 큰 글자를 보호하기 위해 제목과 버튼을 아래위 줄로 분리 배정
     st.header("📝 스코어 입력")
     if st.button("🔄 데이터 갱신 (새로고침)"):
         load_tournament_state()
@@ -344,7 +332,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀(Par{current_par})</div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -359,16 +347,19 @@ if menu == ":material/edit_document: 스코어 입력":
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
                 current_val = st.session_state.scores[player].get(current_course_hole, 0)
                 
-                options = list(range(-2, current_par + 1))
+                # 🚨 Par 4와 Par 5에서만 더블이글(-3) 선택 가능하도록 스마트 옵션 적용
+                min_score_diff = -3 if current_par >= 4 else -2
+                options = list(range(min_score_diff, current_par + 1))
                 if current_val not in options: current_val = 0
                     
                 col_name, col_select = st.columns(2)
                 with col_name: 
                     st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
+                    # 🚨 선택창 라벨에 더블이글(-3) 추가
                     score_diff = st.selectbox(
-                        f"{player} 성적", options=options, index=options.index(current_val) if current_val in options else 2,
-                        format_func=lambda x: "이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}")),
+                        f"{player} 성적", options=options, index=options.index(current_val),
+                        format_func=lambda x: "더블이글(-3)" if x<=-3 else ("이글(-2)" if x==-2 else ("버디(-1)" if x==-1 else ("파(0)" if x==0 else f"+{x}"))),
                         key=f"input_{player}_{current_course_hole}", label_visibility="collapsed"
                     )
                     form_inputs[player] = score_diff
@@ -403,7 +394,12 @@ if menu == ":material/edit_document: 스코어 입력":
                 h_str = f"{h_num}H"
                 if h_num in p_scores:
                     diff = p_scores[h_num]
-                    row_data[h_str] = "0" if diff==0 else (f"버디({diff})" if diff==-1 else (f"이글({diff})" if diff==-2 else f"+{diff}"))
+                    # 🚨 요약 테이블에서도 0 대신 파(0), -3 대신 더블이글(-3) 표시
+                    if diff == 0: row_data[h_str] = "파(0)"
+                    elif diff == -1: row_data[h_str] = "버디(-1)"
+                    elif diff == -2: row_data[h_str] = "이글(-2)"
+                    elif diff <= -3: row_data[h_str] = f"더블이글({diff})"
+                    else: row_data[h_str] = f"+{diff}"
                 else: row_data[h_str] = "-"
                 
             row_data["TOT"] = tot_str
@@ -427,7 +423,6 @@ if menu == ":material/edit_document: 스코어 입력":
 # [메뉴 2] 실시간 리더보드
 # ==========================================
 elif menu == ":material/leaderboard: 실시간 리더보드":
-    # 🚨 [수정] 큰 글자를 보호하기 위해 제목과 버튼 분리 배정
     st.header("🏆 실시간 리더보드")
     if st.button("🔄 리더보드 새로고침"):
         load_tournament_state()
