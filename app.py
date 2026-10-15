@@ -281,14 +281,13 @@ if menu == ":material/edit_document: 스코어 입력":
     if 'selected_group' not in st.session_state or st.session_state.selected_group not in group_list:
         st.session_state.selected_group = group_list[0] if group_list else ""
         
-    col_title, col_refresh = st.columns([2, 1])
-    with col_title: st.header("📝 스코어 입력")
-    with col_refresh:
-        if st.button("🔄 데이터 갱신"):
-            load_tournament_state()
-            st.session_state.auto_jump = True
-            st.toast("✅ 최신 데이터를 불러왔습니다!")
-            st.rerun()
+    # 🚨 [수정] 큰 글자를 보호하기 위해 제목과 버튼을 아래위 줄로 분리 배정
+    st.header("📝 스코어 입력")
+    if st.button("🔄 데이터 갱신 (새로고침)"):
+        load_tournament_state()
+        st.session_state.auto_jump = True
+        st.toast("✅ 최신 데이터를 불러왔습니다!")
+        st.rerun()
             
     if not group_list or "연동대기중" in st.session_state.groups.get("1A조", {}).get("players", {}):
         st.warning("👉 관리자 메뉴에서 대회 스프레드시트 URL을 연동해 주세요.")
@@ -339,13 +338,12 @@ if menu == ":material/edit_document: 스코어 입력":
         
         current_par = st.session_state.par_list[current_course_hole - 1]
         
-        col_prev, col_info, col_next = st.columns(3) # Grid 모드에서는 3등분 무시되고 강제 1:1:1 적용됨
+        col_prev, col_info, col_next = st.columns(3)
         with col_prev:
             if st.button("◀ 이전") and current_idx > 0:
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            # 글씨 자르기/줄바꿈 최적화
             st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀</div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
@@ -364,7 +362,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 options = list(range(-2, current_par + 1))
                 if current_val not in options: current_val = 0
                     
-                col_name, col_select = st.columns(2) # 모바일 Grid에 의해 1:1로 강제 정렬
+                col_name, col_select = st.columns(2)
                 with col_name: 
                     st.markdown(f"<div style='padding-top: 5px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
@@ -429,12 +427,11 @@ if menu == ":material/edit_document: 스코어 입력":
 # [메뉴 2] 실시간 리더보드
 # ==========================================
 elif menu == ":material/leaderboard: 실시간 리더보드":
-    col_lb_title, col_lb_refresh = st.columns([2, 1])
-    with col_lb_title: st.header("🏆 실시간 리더보드")
-    with col_lb_refresh:
-        if st.button("🔄 새로고침"):
-            load_tournament_state()
-            st.toast("✅ 순위표가 업데이트되었습니다!")
+    # 🚨 [수정] 큰 글자를 보호하기 위해 제목과 버튼 분리 배정
+    st.header("🏆 실시간 리더보드")
+    if st.button("🔄 리더보드 새로고침"):
+        load_tournament_state()
+        st.toast("✅ 순위표가 업데이트되었습니다!")
             
     st.caption("🔄 구글 시트와 연동되어 실시간으로 15초마다 자동 갱신됩니다.")
     
