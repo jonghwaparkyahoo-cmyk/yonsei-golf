@@ -17,7 +17,7 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 최적화 CSS (한 줄 고정의 마법)
+# 📱 모바일 UI 완벽 밀착(Fit) CSS
 st.markdown("""
 <style>
 .stSelectbox div[data-baseweb="select"] { min-height: 35px; }
@@ -26,16 +26,21 @@ div.row-widget.stRadio > div {
     background-color: #f0f2f6; padding: 10px; border-radius: 10px;
 }
 
-/* 🚨 모바일 환경(폭 640px 이하)에서 st.columns 가 세로로 떨어지는 현상을 막고 무조건 1줄로 고정 */
+/* 🚨 모바일 환경(폭 640px 이하)에서 가로 스크롤 없이 화면에 100% 딱 맞게 압축 */
 @media (max-width: 640px) {
     div[data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
-        gap: 0.3rem !important; /* 컬럼 사이 여백 최소화 */
+        gap: 0.15rem !important; /* 컬럼 사이 여백 최소화 */
     }
     div[data-testid="column"] {
-        width: auto !important;
-        flex: 1 1 0% !important;
-        min-width: 0 !important; /* 좁은 화면에서도 비율에 맞춰 찌그러지도록 허용 */
+        flex: 1 1 0px !important;
+        width: 0 !important;      /* 내용물 크기 무시하고 화면 폭에 강제 맞춤 */
+        min-width: 0 !important;
+        overflow: hidden !important; /* 튀어나가는 내용 숨김 */
+    }
+    /* 버튼 뚱뚱한 여백 제거 */
+    button[data-testid="baseButton-secondary"] {
+        padding: 0.1rem 0.2rem !important;
     }
 }
 </style>
@@ -49,7 +54,7 @@ if 'par_list' not in st.session_state:
 if 'groups' not in st.session_state:
     st.session_state.groups = {"1A조": {"start_hole": 1, "players": {"연동대기중": {"hcap": "NA", "dept": "-"}}}}
 
-# 🔑 구글 인증 함수 (URL 자동 링크 변환 방지)
+# 🔑 구글 인증 함수
 def get_gspread_client():
     scope1 = "https" + "://" + "www.googleapis.com" + "/auth/spreadsheets"
     scope2 = "https" + "://" + "www.googleapis.com" + "/auth/drive"
@@ -61,7 +66,7 @@ def get_gspread_client():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     return gspread.authorize(creds)
 
-# 🎯 마스터 설정에서 현재 활성화된 대회 URL 가져오기 (15초 캐싱)
+# 🎯 마스터 설정에서 현재 활성화된 대회 URL 가져오기
 @st.cache_data(ttl=15)
 def get_target_url():
     try:
@@ -73,7 +78,7 @@ def get_target_url():
     except: pass
     return st.secrets["spreadsheet_url"]
 
-# 🧠 샷건 여부 및 파(Par) 정보 스마트 스캔 로직
+# 🧠 샷건 여부 및 파(Par) 정보 스마트 스캔
 def parse_tournament_settings(sheet):
     is_shotgun = False
     par_list = [4]*18
@@ -189,7 +194,6 @@ def load_tournament_state():
                     st.session_state.scores[p_name][h_num] = diff_val
     except: pass
 
-# 앱 최초 로드 시 전체 스캔 실행
 load_tournament_state()
 
 # 🚨 스마트 병합(Merge) 저장 로직
@@ -304,14 +308,15 @@ if menu == ":material/edit_document: 스코어 입력":
         
         current_par = st.session_state.par_list[current_course_hole - 1]
         
-        # 🚨 [수정사항 1] 이전/다음 홀 네비게이션 비율 및 글자 축소로 모바일 최적화
-        col_prev, col_info, col_next = st.columns([1, 1.6, 1])
+        # 🚨 [비율 수정] 가운데 글씨 영역에 공간을 더 배정하여 찌그러짐 최소화
+        col_prev, col_info, col_next = st.columns([1, 1.8, 1])
         with col_prev:
             if st.button("◀ 이전") and current_idx > 0:
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center; font-size: 0.85rem; line-height: 1.2; padding-top: 5px;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번 홀 (Par {current_par})</div>", unsafe_allow_html=True)
+            # 🚨 [폰트 수정] 모바일에서 절대 잘리지 않도록 폰트 크기 최적화 및 줄바꿈 허용 안함
+            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.3; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번 홀 (Par {current_par})</div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -329,11 +334,10 @@ if menu == ":material/edit_document: 스코어 입력":
                 options = list(range(-2, current_par + 1))
                 if current_val not in options: current_val = 0
                     
-                # 🚨 [수정사항 2] 선수 이름과 스코어 입력창이 모바일에서 한 줄로 표시되도록 비율 조정
-                col_name, col_select = st.columns([1, 2])
+                # 🚨 [비율 수정] 선수 이름 영역과 스코어 선택창 비율 재조정
+                col_name, col_select = st.columns([1.2, 2.8])
                 with col_name: 
-                    # 텍스트가 길어도 한 줄 유지 (생략 기호 적용)
-                    st.markdown(f"<div style='padding-top: 10px; font-weight: bold; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='padding-top: 10px; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     score_diff = st.selectbox(
                         f"{player} 성적", options=options, index=options.index(current_val) if current_val in options else 2,
