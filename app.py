@@ -17,7 +17,7 @@ st.set_page_config(
 # 15초마다 자동 새로고침
 st_autorefresh(interval=15000, key="datarefresh")
 
-# 📱 모바일 UI 완벽 1줄 고정 & 글자 잘림 방지 CSS
+# 📱 모바일 UI 완벽 1줄 고정 (테스트 검증된 Grid 방식 적용)
 st.markdown("""
 <style>
 div.row-widget.stRadio > div {
@@ -61,8 +61,7 @@ div.row-widget.stRadio > div {
     div[data-testid="stForm"] {
         padding: 0.5rem !important;
     }
-    
-    /* 🚨 텍스트 잘림(Cropping) 완벽 차단: 마크다운 기본 여백 박살 내기 */
+    /* 마크다운 여백 찌꺼기 완벽 제거 */
     div[data-testid="stMarkdownContainer"] p {
         margin-bottom: 0 !important;
         padding-bottom: 0 !important;
@@ -309,6 +308,7 @@ if menu == ":material/edit_document: 스코어 입력":
         current_idx = st.session_state[hole_idx_key]
         current_course_hole = hole_sequence[current_idx]
         
+        # 🚨 홀 자동 넘김 엔진 (일괄입력 선수 열외 처리)
         if st.session_state.auto_jump:
             is_current_completed = True
             for p in players_info.keys():
@@ -339,7 +339,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 st.session_state.auto_jump = False 
                 st.session_state[hole_idx_key] = current_idx - 1; st.rerun()
         with col_info:
-            st.markdown(f"<div style='text-align: center; font-size: 0.75rem; line-height: 1.2; padding-top: 5px; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><br>{current_course_hole}번홀(Par{current_par})</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 35px; font-size: 0.75rem; line-height: 1.2; white-space: nowrap;'><b>{current_idx + 1}번째 진행</b><span>{current_course_hole}번홀(Par{current_par})</span></div>", unsafe_allow_html=True)
         with col_next:
             if st.button("다음 ▶") and current_idx < 17:
                 st.session_state.auto_jump = False
@@ -354,6 +354,7 @@ if menu == ":material/edit_document: 스코어 입력":
                 if player not in st.session_state.scores: st.session_state.scores[player] = {}
                 p_scores = st.session_state.scores[player]
                 
+                # 🚨 99번 홀(일괄입력) 데이터 확인
                 is_bulk = 99 in p_scores
                 current_val = p_scores.get(current_course_hole, 0)
                 
@@ -363,12 +364,15 @@ if menu == ":material/edit_document: 스코어 입력":
                     
                 col_name, col_select = st.columns(2)
                 with col_name: 
-                    # 🚨 [해결책] line-height를 35px로 주어 세로 정중앙 배치 & 높이 완벽 보장
-                    st.markdown(f"<div style='line-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
+                    # 선수 이름 수직 중앙 정렬
+                    st.markdown(f"<div style='display: flex; align-items: center; min-height: 35px; margin: 0; font-weight: bold; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'>{player}</div>", unsafe_allow_html=True)
                 with col_select:
                     if is_bulk:
-                        # 🚨 [해결책] line-height 35px 적용하여 잘림 완벽 방지
-                        st.markdown("<div style='line-height: 35px; margin: 0; text-align: right; color: #888; font-size: 0.85rem; font-weight: bold;'>✅ 일괄마감됨</div>", unsafe_allow_html=True)
+                        # 🚨 [해결책] 글씨 꼼수 대신 "진짜 셀렉트박스"를 띄우고 비활성화(disabled)시킴! 잘림 원천 봉쇄
+                        st.selectbox(
+                            f"{player} 마감", options=["🔒 일괄마감됨"], index=0,
+                            disabled=True, key=f"input_{player}_{current_course_hole}_disabled", label_visibility="collapsed"
+                        )
                     else:
                         score_diff = st.selectbox(
                             f"{player} 성적", options=options, index=options.index(current_val),
